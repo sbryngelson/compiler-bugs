@@ -1,0 +1,57 @@
+module m_mod
+
+    type inner_type
+        real, allocatable, dimension(:) :: data
+    end type inner_type
+
+    type outer_type
+        type(inner_type), allocatable, dimension(:) :: inner
+    end type outer_type
+
+    type(outer_type), allocatable, dimension(:) :: outer
+
+    integer, parameter :: nouter = 2
+    integer, parameter :: ninner = 10
+    integer, parameter :: ndat = 10
+
+    contains
+
+    subroutine s_mod_init()
+
+        integer :: i,j
+
+        allocate(outer(1:nouter))
+
+        do j = 1,nouter
+            allocate(outer(j)%inner(1:ninner))
+            do i = 1,ninner
+                allocate(outer(j)%inner(i)%data(1:ndat))
+            end do
+        end do
+
+        !$acc enter data copyin(outer(1:nouter))
+        do j = 1,nouter
+            !$acc enter data copyin(outer(j)%inner)
+            do i = 1,ninner
+                !$acc enter data copyin(outer(j)%inner(i))
+                !$acc enter data create(outer(j)%inner(i)%data(1:ndat))
+            end do
+        end do
+
+    end subroutine s_mod_init
+
+    subroutine s_mod_finalize()
+
+        integer :: i
+
+        do j = 1,nouter
+        do i = 1,ninner
+            !$acc update host (outer(j)%inner(i)%data(1:ndat))
+            print*, 'outer', j, 'inner', i, ':', outer(j)%inner(i)%data(1:ndat)
+        end do
+        print*, ''
+        end do
+
+    end subroutine s_mod_finalize
+
+end module m_mod
