@@ -6,7 +6,7 @@ program p_main
     integer :: iV
 
     call s_mod_init
-    call s_mod2()
+    ! call s_mod2()
 
     !$acc parallel loop present(outer(1))
     do iV = 1,ndat
