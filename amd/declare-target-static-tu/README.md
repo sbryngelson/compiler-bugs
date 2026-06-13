@@ -69,12 +69,25 @@ link:    -fopenmp --offload-arch=gfx90a -flto-partitions=16
 run:     OMP_TARGET_OFFLOAD=MANDATORY
 ```
 
+Verified on `amdflang` ROCm 7.2.0 (LLVM `22.0.0git`) **and** the newest available drop, AFAR
+23.2.0 (LLVM `23.0.0git`, dated 2026-04-18) — fails on both.
+
+A sharper companion reproducer — two *identical* arrays disagreeing in one kernel based only on
+the push mechanism (`enter data map` vs `update to`) — is in `../declare-target-roulette/`.
+
 ## Fix
 
-Make the variable allocatable. In MFC this was `Re_size` (`integer, dimension(2)`): #1556
-moved the kernel that reads it into a different module from the `GPU_UPDATE` that sets it, so
-the kernel saw `Re_size = 0` and viscosity was silently disabled in `2D_viscous_shock_tube`.
-Fix: `integer, allocatable, dimension(:) :: Re_size` with `allocate(Re_size(2))`.
+Avoid reading the `declare target` static from the device at all: capture it host-side and
+`firstprivate` the value into the kernel. In MFC this variable was `Re_size`
+(`integer, dimension(2)`): #1556 moved the kernel that reads it into a different module from the
+`GPU_UPDATE` that sets it, so the kernel saw `Re_size = 0` and viscosity was silently disabled
+in `2D_viscous_shock_tube`.
+
+**Note:** making the variable `allocatable` (as the symptom might suggest) is *not* a reliable
+fix in the full application — it only moves the bug to other kernels (an *inversion*: static
+breaks some solver kernels, allocatable breaks others; the defect is per-kernel codegen, not a
+clean static-vs-allocatable rule). The robust fix is the host-capture / `firstprivate` workaround
+above. (MFC PR: MFlowCode/MFC#1588.)
 
 ## Source
 
