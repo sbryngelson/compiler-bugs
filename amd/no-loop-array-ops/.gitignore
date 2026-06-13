@@ -1,0 +1,18 @@
+# Build outputs
+minimal_array_constructor
+minimal_whole_array_ops
+*.o
+*.mod
+
+# Compiler save-temps artifacts
+*.bc
+*.mlir
+*.i
+*.s
+*.out
+*.img
+*.img.*
+*.resolution.txt
+*.wrapper.bc
+*.lto.o
+*.lto.s
