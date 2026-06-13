@@ -1,0 +1,6 @@
+*.mod
+*.modmic
+*.out
+build_2026/
+find_ocloc*.sh
+intel-*.sh

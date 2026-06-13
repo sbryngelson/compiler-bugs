@@ -28,3 +28,9 @@ device. A `map(to:)` in TU A updates only TU A's device copy; a kernel in TU B r
 still-zero copy. Allocatable variables are unaffected.
 Bug reports: [ROCm/llvm-project#2890](https://github.com/ROCm/llvm-project/issues/2890),
 [llvm/llvm-project#203711](https://github.com/llvm/llvm-project/issues/203711). Also filed with OLCF helpdesk.
+
+---
+
+### `intel/` — ifx: Intel GPU (PVC) OpenMP target offload bugs
+
+Four reproducers for `ifx` on Intel PVC (Aurora). See `intel/README.md` for details.
