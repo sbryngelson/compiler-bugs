@@ -4,10 +4,10 @@ Minimal reproducers for Fortran compiler bugs encountered in HPC workloads on OL
 
 ---
 
-### `test-bug1/` – `test-bug12/` — Cray CCE 15.0.1 Fortran + OpenACC
+### `cce/` — Cray CCE 15.0.1 Fortran + OpenACC
 
-Module-scope global arrays and derived types under `!$acc declare`. Some pass, some fail.
-Bug reports: **OLCFDEV-1416, CAST-31898**.
+Module-scope variables and nested allocatable derived types under `!$acc declare` (link/create).
+12 reproducers + archived cases. Bug reports: **OLCFDEV-1416, CAST-31898**. See `cce/README.md`.
 
 ---
 
