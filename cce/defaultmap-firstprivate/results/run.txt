@@ -1,0 +1,11 @@
+Cray Fortran : Target is x86-64 : x86-trento : none : amdgcn-gfx90a
+Cray Fortran : Version 19.0.0 (20250207225012_cc4d36e4ff3377d45f0e6e892b5dacd82009a0ca)
+correct checksum = 8.040644772571076E+07
+variant private(all) simd                        checksum =  8.040644772571076E+07
+variant defaultmap(fp:scalar) simd               checksum =                    NaN
+variant firstprivate(all) simd                   checksum =  8.040644772571076E+07
+--- robustness: defaultmap is wrong regardless of opt level / simd ---
+variant defaultmap(fp:scalar) simd               checksum =                    NaN
+variant defaultmap(fp:scalar) simd               checksum =  7.995101274857007E+07
+variant defaultmap(fp:scalar) nosimd             checksum =                    NaN
+variant defaultmap(fp:scalar) simd +fp(re)       checksum =                    NaN

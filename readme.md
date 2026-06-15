@@ -11,6 +11,18 @@ Module-scope variables and nested allocatable derived types under `!$acc declare
 
 ---
 
+### `cce/defaultmap-firstprivate/` — CCE-19: `defaultmap(firstprivate:scalar)` doesn't firstprivate
+
+On a register-heavy `target teams distribute parallel do simd` offload kernel, per-cell scalars left
+off `private()` that rely on `defaultmap(firstprivate:scalar)` come out as `NaN` — yet listing the
+same scalars in an explicit `private()` **or** `firstprivate()` clause is correct. Since defaultmap
+is *defined* to make them firstprivate, the divergence from an explicit firstprivate of the identical
+set is a compiler bug, not a semantic. Independent of `simd` and optimization level; needs enough
+omitted scalars to spill (which is how it hid in MFC until an added `firstprivate` raised register
+pressure). CCE 19.0.0. See `cce/defaultmap-firstprivate/README.md`.
+
+---
+
 ### `amd/no-loop-array-ops/` — amdflang: wrong results with `-fopenmp-target-fast` + array expressions
 
 Array constructor and whole-array slice ops inside `!$omp target` kernels produce wrong results
