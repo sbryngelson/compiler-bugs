@@ -9,6 +9,7 @@ Standalone reproducer for an AMD flang (ROCm) OpenMP offload codegen bug.
 | ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) |
 | llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) |
 | Source | MFC [MFlowCode/MFC#1588](https://github.com/MFlowCode/MFC/pull/1588) |
+| OLCF Helpdesk | OLCFHELP-26858 |
 
 ## Symptom
 
