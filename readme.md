@@ -53,7 +53,7 @@ Isolation (constant-indexed firstprivate array still spills; dynamically-indexed
 does not) shows the trigger is `firstprivate` of an array, not the indexing. The copy-in is lowered
 through the Fortran array-assignment runtime (`_FortranAAssign`) rather than a value copy:
 undefined device symbol on ROCm 7.2.0, a scratch-spilling blob on afar 23.1.0 and 23.2.0.
-Upstream issue: _filing_.
+Upstream issue: [ROCm/llvm-project#2909](https://github.com/ROCm/llvm-project/issues/2909).
 
 ---
 
