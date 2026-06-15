@@ -1,0 +1,47 @@
+================================================================
+########## afar therock-23.1.0 (03/12/26) ##########
+================================================================
+---------- v231 A ----------
+variant            : A baseline (no fp array)
+ns per element     :     0.1314
+DEVID:  0 SGN:6 ConstWGSize:256  args:113 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:0B scratch:0B sgpr_count:32 vgpr_count:124 agpr_count:0 sgpr_spill_count:0 vgpr_spill_count:0 tripcount:16000000 rpc:0 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 4 Achieved Occupancy: 50% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l170
+---------- v231 B ----------
+variant            : B firstprivate(int(2))
+ns per element     :     6.9565
+DEVID:  0 SGN:6 ConstWGSize:256  args:114 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:56B scratch:20816B sgpr_count:108 vgpr_count:384 agpr_count:128 sgpr_spill_count:31 vgpr_spill_count:0 tripcount:16000000 rpc:1 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 1 Achieved Occupancy: 12% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l183
+---------- v231 C ----------
+variant            : C firstprivate(2 scalars
+ns per element     :     0.1902
+DEVID:  0 SGN:6 ConstWGSize:256  args:115 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:0B scratch:0B sgpr_count:32 vgpr_count:124 agpr_count:0 sgpr_spill_count:0 vgpr_spill_count:0 tripcount:16000000 rpc:0 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 4 Achieved Occupancy: 50% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l196
+---------- v231 D ----------
+variant            : D fp(array) const-index
+ns per element     :     6.9569
+DEVID:  0 SGN:6 ConstWGSize:256  args:114 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:56B scratch:20816B sgpr_count:108 vgpr_count:384 agpr_count:128 sgpr_spill_count:31 vgpr_spill_count:0 tripcount:16000000 rpc:1 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 1 Achieved Occupancy: 12% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l183
+---------- v231 E ----------
+variant            : E priv(array) dyn-index
+ns per element     :     0.1911
+DEVID:  0 SGN:6 ConstWGSize:256  args:116 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:0B scratch:0B sgpr_count:32 vgpr_count:124 agpr_count:0 sgpr_spill_count:0 vgpr_spill_count:0 tripcount:16000000 rpc:0 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 4 Achieved Occupancy: 50% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l209
+================================================================
+########## afar therock-23.2.0 (04/18/26) ##########
+================================================================
+---------- v232 A ----------
+variant            : A baseline (no fp array)
+ns per element     :     0.1354
+DEVID:  0 SGN:6 ConstWGSize:256  args:113 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:0B scratch:0B sgpr_count:32 vgpr_count:122 agpr_count:0 sgpr_spill_count:0 vgpr_spill_count:0 tripcount:16000000 rpc:0 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 4 Achieved Occupancy: 50% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l170
+---------- v232 B ----------
+variant            : B firstprivate(int(2))
+ns per element     :     6.3302
+DEVID:  0 SGN:6 ConstWGSize:256  args:114 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:56B scratch:35424B sgpr_count:108 vgpr_count:512 agpr_count:256 sgpr_spill_count:1155 vgpr_spill_count:451 tripcount:16000000 rpc:1 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 1 Achieved Occupancy: 12% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l183
+---------- v232 C ----------
+variant            : C firstprivate(2 scalars
+ns per element     :     0.1962
+DEVID:  0 SGN:6 ConstWGSize:256  args:115 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:0B scratch:0B sgpr_count:28 vgpr_count:123 agpr_count:0 sgpr_spill_count:0 vgpr_spill_count:0 tripcount:16000000 rpc:0 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 4 Achieved Occupancy: 50% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l196
+---------- v232 D ----------
+variant            : D fp(array) const-index
+ns per element     :     6.3472
+DEVID:  0 SGN:6 ConstWGSize:256  args:114 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:56B scratch:35424B sgpr_count:108 vgpr_count:512 agpr_count:256 sgpr_spill_count:1155 vgpr_spill_count:451 tripcount:16000000 rpc:1 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 1 Achieved Occupancy: 12% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l183
+---------- v232 E ----------
+variant            : E priv(array) dyn-index
+ns per element     :     0.2031
+DEVID:  0 SGN:6 ConstWGSize:256  args:116 teamsXthrds:(62500X 256) reqd:(   0X   0) lds_usage:0B scratch:0B sgpr_count:28 vgpr_count:123 agpr_count:0 sgpr_spill_count:0 vgpr_spill_count:0 tripcount:16000000 rpc:0 md:0 md_LB:-1 md_UB:-1 Max Occupancy: 4 Achieved Occupancy: 50% n:__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l209
+=== DONE dualdrop ===

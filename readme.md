@@ -43,6 +43,20 @@ program semantics. Same bug reports
 
 ---
 
+### `amd/flang-firstprivate-array-occupancy/` — amdflang: `firstprivate` of a small array spills to scratch
+
+A `firstprivate` clause on a small fixed-size integer array (8 bytes) on a register-heavy
+`target teams distribute parallel do` kernel spills ~35 KB/work-item to scratch, pins AGPRs at the
+hardware maximum, and drops occupancy to one wave per SIMD — a 30-50x slowdown. The same two
+integers passed as scalars, or as a plain `private` array seeded from those scalars, cost nothing.
+Isolation (constant-indexed firstprivate array still spills; dynamically-indexed *private* array
+does not) shows the trigger is `firstprivate` of an array, not the indexing. The copy-in is lowered
+through the Fortran array-assignment runtime (`_FortranAAssign`) rather than a value copy:
+undefined device symbol on ROCm 7.2.0, a scratch-spilling blob on afar 23.1.0 and 23.2.0.
+Upstream issue: _filing_.
+
+---
+
 ### `intel/` — ifx: Intel GPU (PVC) OpenMP target offload bugs
 
 Four reproducers for `ifx` on Intel PVC (Aurora). See `intel/README.md` for details.

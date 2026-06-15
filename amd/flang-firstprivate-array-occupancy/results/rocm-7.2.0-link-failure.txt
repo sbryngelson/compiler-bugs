@@ -1,0 +1,15 @@
+# Released ROCm 7.2.0 amdflang (LLVM 22.0.0git): firstprivate(array) fails to DEVICE-LINK.
+# $ /opt/rocm-7.2.0/bin/amdflang --version
+AMD flang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.0 26014 7b800a19466229b8479a78de19143dc33c3ab9b5)
+
+# $ /opt/rocm-7.2.0/bin/amdflang -cpp -fopenmp --offload-arch=gfx90a -O3 -fopenmp-assume-threads-oversubscription -fopenmp-assume-teams-oversubscription -DVARIANT_B_FP_ARRAY firstprivate_array.f90 -fopenmp --offload-arch=gfx90a -o fp_B
+ld.lld: error: undefined symbol: _FortranAAssign
+>>> referenced by /tmp/rcB.amdgcn.gfx90a-0f5c17.img.lto.o:(__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l183)
+>>> referenced by /tmp/rcB.amdgcn.gfx90a-0f5c17.img.lto.o:(__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l183)
+>>> referenced by /tmp/rcB.amdgcn.gfx90a-0f5c17.img.lto.o:(__omp_offloading_8116438_5a00bf11__QFPrun_sweep_l183)
+>>> referenced 3 more times
+clang: error: ld.lld command failed with exit code 1 (use -v to see invocation)
+/opt/rocm-7.2.0/lib/llvm/bin/clang-linker-wrapper: error: 'clang' failed
+flang-22: error: linker command failed with exit code 1 (use -v to see invocation)
+
+# Scalar (C) and private-array (E) forms link fine on the same compiler.
