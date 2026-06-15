@@ -71,15 +71,18 @@ enough to spill.
 
 ## Build and run
 
-Frontier (login node has a GPU, or run under `srun`):
+Frontier (login node has a GPU, or run the binaries under `srun`). Load a working CCE-19
+GPU-offload environment first — the bare `module load`s miss cpe / pkg-config paths and `ftn`
+fails with `libopenacc not found`, so use MFC's loader, which sets them up:
 
 ```bash
+source /path/to/MFlowCode-MFC/mfc.sh load -c f -m g   # CCE 19 + craype-accel-amd-gfx90a
 ./build_and_run.sh
 ```
 
-CCE native OpenMP offload uses `-homp` (this `ftn` does not accept the clang-style
-`-fopenmp --offload-arch=gfx90a`); `-eZ` runs the C preprocessor for the `-D` knobs. Modules:
-`PrgEnv-cray craype-accel-amd-gfx90a cce/19.0.0`.
+Built with `ftn -fopenmp -O3`. crayftn takes the gfx90a target from the
+`craype-accel-amd-gfx90a` module (loaded by `-m g`), not from `--offload-arch`; `-eZ` runs the
+C preprocessor for the `-D` knobs.
 
 ## Versions
 

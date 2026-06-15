@@ -1,11 +1,21 @@
-Cray Fortran : Target is x86-64 : x86-trento : none : amdgcn-gfx90a
+Frontier MI250X (gfx90a), one GCD. Built with `ftn -fopenmp -O3` after
+`source <MFC>/mfc.sh load -c f -m g` (CCE 19.0.0 + craype-accel-amd-gfx90a).
+OMP_TARGET_OFFLOAD=MANDATORY, so these are device runs, not host fallback.
+Correct checksum = 8.040644772571076E+07.
+
 Cray Fortran : Version 19.0.0 (20250207225012_cc4d36e4ff3377d45f0e6e892b5dacd82009a0ca)
-correct checksum = 8.040644772571076E+07
-variant private(all) simd                        checksum =  8.040644772571076E+07
-variant defaultmap(fp:scalar) simd               checksum =                    NaN
-variant firstprivate(all) simd                   checksum =  8.040644772571076E+07
---- robustness: defaultmap is wrong regardless of opt level / simd ---
-variant defaultmap(fp:scalar) simd               checksum =                    NaN
-variant defaultmap(fp:scalar) simd               checksum =  7.995101274857007E+07
-variant defaultmap(fp:scalar) nosimd             checksum =                    NaN
-variant defaultmap(fp:scalar) simd +fp(re)       checksum =                    NaN
+
+  private(all) simd                        checksum =  8.040644772571076E+07   correct
+  defaultmap(fp:scalar) simd               checksum =                    NaN   WRONG
+  firstprivate(all) simd                   checksum =  8.040644772571076E+07   correct
+
+defaultmap is wrong regardless of optimization level and simd:
+
+  defaultmap(fp:scalar) -O3 simd                    checksum =                    NaN
+  defaultmap(fp:scalar) -O2 simd                    checksum =                    NaN
+  defaultmap(fp:scalar) -O1 simd                    checksum =  7.99513e7  (finite but ~0.6% wrong)
+  defaultmap(fp:scalar) -O3 nosimd                  checksum =                    NaN
+  defaultmap(fp:scalar) -O3 simd + firstprivate(re) checksum =                    NaN  (not the trigger)
+
+private(all) and firstprivate(all) -- the exact scalars defaultmap is supposed to firstprivate --
+are both correct. Only relying on defaultmap(firstprivate:scalar) for them is wrong.
