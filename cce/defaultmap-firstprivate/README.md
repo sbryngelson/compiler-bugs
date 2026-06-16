@@ -6,7 +6,7 @@ Standalone reproducer for a Cray Fortran (CCE 19) OpenMP target-offload bug.
 
 | Where | Link / ID |
 |-------|-----------|
-| OLCF Helpdesk | _filing_ |
+| OLCF Helpdesk | OLCFHELP-26859 |
 | Source | MFC [#1588](https://github.com/MFlowCode/MFC/pull/1588), [#1572](https://github.com/MFlowCode/MFC/pull/1572) |
 
 ## Symptom
