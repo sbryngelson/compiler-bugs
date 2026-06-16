@@ -7,7 +7,7 @@ Standalone reproducer for a Cray Fortran (CCE 19) OpenMP target-offload bug.
 | Where | Link / ID |
 |-------|-----------|
 | OLCF Helpdesk | _filing_ |
-| Source | MFC [MFlowCode/MFC#1588](https://github.com/MFlowCode/MFC/pull/1588) |
+| Source | MFC [#1588](https://github.com/MFlowCode/MFC/pull/1588), [#1572](https://github.com/MFlowCode/MFC/pull/1572) |
 
 ## Symptom
 
@@ -45,12 +45,28 @@ defaultmap -O3 simd + firstprivate(re)   NaN   (an added firstprivate clause is 
 ## What makes it appear
 
 Register pressure. With only a handful of scalars left to `defaultmap`, CCE privatizes them
-correctly; the failure needs enough omitted scalars that they spill. This is exactly how it hid
-in MFC: the Riemann kernels left a few scalars off the `private()` list and rode `defaultmap`,
-which worked — until an unrelated change (adding `firstprivate(Re_size_loc)`, an array, for an
-AMD-flang workaround) raised register pressure enough to push the omitted scalars over the spill
-threshold, and the omitted scalars silently went wrong on the Cray build. Completing the
-`private()` lists (a semantic no-op on every other compiler) fixed it.
+correctly; the failure needs the omitted scalars to spill. The dangerous part: that threshold can
+be crossed by a small, *semantics-preserving* change anywhere else in the kernel — with no
+diagnostic, and correct results on every other compiler.
+
+This is not a synthetic corner case — it has silently broken production code (MFC) **twice**, each
+time from an unrelated change that nudged register allocation:
+
+- **MFC [#1588](https://github.com/MFlowCode/MFC/pull/1588)** — adding `firstprivate(Re_size_loc)`
+  (an AMD-flang viscous workaround) raised register pressure enough that the HLL Riemann kernel's
+  omitted scalars spilled and went silently wrong. Fix: complete the `private()` lists.
+
+- **MFC [#1572](https://github.com/MFlowCode/MFC/pull/1572)** — a hot-path refactor that extracted
+  arithmetic into device helpers (which CCE *correctly inlines* — verified) shifted register
+  allocation just past the threshold. With only **four** scalars (`s_M, s_P, xi_M, xi_P`) riding
+  `defaultmap`, the HLL kernel produced gross errors on golden regression tests — relative errors up
+  to **4.6E+14** (a conserved variable that should be `3.5e-13` came out `-162`), ~5.8% on others —
+  on Cray CCE-19 GPU-OMP **only**; AMD flang and NVHPC builds were green. Fix: add those four scalars
+  to `private()`.
+
+So four omitted scalars is enough, the trigger can be almost any change that touches register
+allocation, and the only symptom is wrong numbers. Completing the `private()` list (a semantic no-op
+on every other compiler) is the workaround in both cases.
 
 ## Minimal form
 
