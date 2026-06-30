@@ -23,13 +23,16 @@ pressure). CCE 19.0.0. See `cce/defaultmap-firstprivate/README.md`.
 
 ---
 
-### `amd/no-loop-array-ops/` — amdflang: wrong results with `-fopenmp-target-fast` + array expressions
+### `amd/no-loop-array-ops/` — amdflang: wrong results with `-fopenmp-target-fast` + array expressions — **FIXED**
 
 Array constructor and whole-array slice ops inside `!$omp target` kernels produce wrong results
 when `-fopenmp-target-fast` and both oversubscription flags are present.
 Root cause: `no_loop` exec mode hoists `omp_get_num_threads()` before the parallel region is set up,
 yielding stride=1 instead of 32 — threads K+31..N-1 are never assigned.
-Upstream issue: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601).
+Fixed upstream: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058) (merged into
+`amd-staging` 2026-06-25, re-landing [#2602](https://github.com/ROCm/llvm-project/pull/2602)).
+Reported in [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601) and
+[llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621) (upstream, still open).
 
 ---
 

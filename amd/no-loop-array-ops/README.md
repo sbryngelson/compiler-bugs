@@ -3,7 +3,12 @@
 Minimal reproducers for AMD flang OpenMP target offload bugs found in MFC.
 Target hardware: gfx90a (MI250X). Compiler: amdflang 23.1.0–23.2.1 (therock-afar, ROCm 7.12–7.13).
 
-## Active bugs (root directory)
+**Status: FIXED upstream.** Landed via [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058)
+(merged into `amd-staging` 2026-06-25), re-landing the patch originally submitted as
+[#2602](https://github.com/ROCm/llvm-project/pull/2602). Still open upstream at
+[llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621).
+
+## Bugs reproduced below (now fixed in amd-staging)
 
 ### `minimal_array_constructor.f90`
 
@@ -91,18 +96,20 @@ With K=⌈N/32⌉ blocks, coverage is flat_ids `0..(K+30)`. Flat_ids `K+31..N−
 | `openmp/device/src/Workshare.cpp` | ~938 | `DistributeFor` — uses `omp_get_num_threads()` as stride |
 | `openmp/device/src/Parallelism.cpp` | 85 | `__kmpc_parallel_spmd` — sets `Level=1` too late |
 
-### Proposed fix
+### Fix (landed)
 
-In `openmp/device/src/Workshare.cpp`, the `DistributeFor` no-loop path should use `mapping::getMaxTeamThreads()` instead of the `num_threads` parameter:
+In `openmp/device/src/Workshare.cpp`, the `DistributeFor` no-loop path now overrides `NumThreads`
+with `mapping::getMaxTeamThreads()` when `OneIterationPerThread=1`, before it's used for the
+`BlockChunk` default and stride computation:
 
 ```cpp
-// Replace:
-Ty stride = NumBlocks * NumThreads;
-// With:
-Ty stride = NumBlocks * mapping::getMaxTeamThreads();
+if (OneIterationPerThread)
+  NumThreads = static_cast<Ty>(mapping::getMaxTeamThreads());
 ```
 
-Upstream issue: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601)
+Merged: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058) (2026-06-25).
+Upstream issue (still open): [llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621).
+Original report: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601)
 
 ---
 
