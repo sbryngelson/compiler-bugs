@@ -113,9 +113,9 @@ Original report: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/i
 
 ---
 
-## Also fixed in this repo: VLA private bug
+## Also in this repo: VLA private bug — FIXED upstream
 
-`full/test15_vla_private.f90` and `full/test15b_vla_runtime.f90` reproduce GPU memory faults from `private` VLA arrays. Fix in progress: [ROCm/llvm-project#2422](https://github.com/ROCm/llvm-project/pull/2422). Real-world impact on MFC: [MFlowCode/MFC#1449](https://github.com/MFlowCode/MFC/issues/1449).
+`full/test15_vla_private.f90` and `full/test15b_vla_runtime.f90` reproduce GPU memory faults from `private` VLA arrays (tracked as [ROCm/llvm-project#2419](https://github.com/ROCm/llvm-project/issues/2419)). The originally-submitted fix ([#2422](https://github.com/ROCm/llvm-project/pull/2422)) and its follow-up ([#2423](https://github.com/ROCm/llvm-project/issues/2423), missing `free()`) were both superseded by a different-approach fix landed directly upstream: [llvm/llvm-project#200841](https://github.com/llvm/llvm-project/pull/200841) (heap-allocates dynamic private arrays with matching dealloc-region cleanup), merged into `llvm/llvm-project` main on 2026-06-05. Verified fixed by building flang from `amd-staging` (commit `09cac6e4`) on an MI210/gfx90a on 2026-06-21: original reproducer now exits 0 with the correct value, and the compiler emits the expected `malloc`/`free` diagnostic instead of an `addrspace(5)` scratch alloca. Real-world impact on MFC: [MFlowCode/MFC#1449](https://github.com/MFlowCode/MFC/issues/1449).
 
 ---
 

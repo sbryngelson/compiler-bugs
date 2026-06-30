@@ -2,12 +2,24 @@
 
 Standalone reproducer for an AMD flang (ROCm) OpenMP offload codegen bug.
 
+## Status: OPEN — not fixed
+
+Still reproduces on the 2026-06-12 public ROCm nightly (`therock-dist-linux-gfx90a-7.14.0a20260612`).
+AMD's first attempted fix, [llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466),
+only gates the *implicit* firstprivate-promotion path (`resolve-directives.cpp`); this reproducer
+uses *explicit* `firstprivate(re)`, which already goes through delayed privatization, and the
+array copy-in via `_FortranAAssign` in the privatizer init region — the actual spill — is
+untouched by that PR. Verified: building amd-staging + #204466 and re-measuring shows the spill
+is byte-for-byte unchanged (1.04 MB code object, 20720 B scratch, 12% occupancy, on vs. off).
+AMD (Jonathan03ant) is now routing this to their internal team.
+
 ## Tracking
 
 | Where | Link / ID |
 |-------|-----------|
-| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) |
-| llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) |
+| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — open |
+| llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — open |
+| Non-fix attempt | [llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466) — doesn't cover this case |
 | Source | MFC [MFlowCode/MFC#1588](https://github.com/MFlowCode/MFC/pull/1588) |
 | OLCF Helpdesk | OLCFHELP-26858 |
 

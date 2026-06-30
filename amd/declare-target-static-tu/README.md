@@ -1,13 +1,28 @@
 # AMD flang: static `declare target` variable not shared across translation units
 
-Standalone reproducer for an AMD flang (ROCm) OpenMP offload bug.
+Standalone reproducer for an AMD flang (ROCm) OpenMP offload issue.
+
+## Resolution: NOT A BUG — working as intended
+
+AMD (mjklemm) explained the actual semantics: a `declare target` variable with the `SAVE`
+attribute (scalar or array) has an initial device mapping with an **infinite reference count**.
+`target` directives with implicit mapping, explicit `map` clauses, and `target enter data
+map(to:)` all check presence first — since the variable is already "present" (infinite refcount),
+none of them re-copy the host value. `target update to(...)` (or `map(always,to:)`) bypasses the
+presence check and always copies. The `allocatable` case worked only because its *descriptor* has
+infinite refcount while the heap storage it points to does not, so the data still gets copied.
+
+Confirmed by reproducing all three pushes (`enter data map(to:)` = stale `0`, `target update
+to` = correct `2`, `map(always,to:)` = correct `2`) and closed as working-as-intended. CCE and
+nvfortran happen to copy on plain `map(to:)` in this case too, which is what made the AMD/conformant
+behavior look like a silent-wrong-answer bug rather than a stricter reading of the spec.
 
 ## Tracking
 
 | Where | Link / ID |
 |-------|-----------|
-| ROCm/llvm-project | [#2890](https://github.com/ROCm/llvm-project/issues/2890) |
-| llvm/llvm-project | [#203711](https://github.com/llvm/llvm-project/issues/203711) |
+| ROCm/llvm-project | [#2890](https://github.com/ROCm/llvm-project/issues/2890) — closed, not planned |
+| llvm/llvm-project | [#203711](https://github.com/llvm/llvm-project/issues/203711) — closed, not planned |
 | OLCF helpdesk | filed |
 
 ## Symptom
@@ -77,17 +92,22 @@ the push mechanism (`enter data map` vs `update to`) — is in `../declare-targe
 
 ## Fix
 
-Avoid reading the `declare target` static from the device at all: capture it host-side and
-`firstprivate` the value into the kernel. In MFC this variable was `Re_size`
-(`integer, dimension(2)`): #1556 moved the kernel that reads it into a different module from the
-`GPU_UPDATE` that sets it, so the kernel saw `Re_size = 0` and viscosity was silently disabled
-in `2D_viscous_shock_tube`.
+The conformant fix, now that the actual semantics are understood: use `target update to(...)`
+(or `map(always,to:)`) to push a new value into a `declare target` SAVE variable — `map(to:)` /
+`enter data map(to:)` will not re-copy it once it's been mapped once. MFC switched to `target
+update to` for these pushes and the symptom is gone.
 
-**Note:** making the variable `allocatable` (as the symptom might suggest) is *not* a reliable
-fix in the full application — it only moves the bug to other kernels (an *inversion*: static
-breaks some solver kernels, allocatable breaks others; the defect is per-kernel codegen, not a
-clean static-vs-allocatable rule). The robust fix is the host-capture / `firstprivate` workaround
-above. (MFC PR: MFlowCode/MFC#1588.)
+In MFC this variable was `Re_size` (`integer, dimension(2)`): #1556 moved the kernel that reads
+it into a different module from the code that sets it, and the push the kernel relied on was a
+`map(to:)`-style push rather than `target update to`, so the kernel saw `Re_size = 0` and
+viscosity was silently disabled in `2D_viscous_shock_tube`.
+
+**Historical note:** before the root cause was understood, the workaround used was capturing the
+value host-side and `firstprivate`-ing it into the kernel instead (MFC PR: MFlowCode/MFC#1588).
+That still works, but `target update to` is the more direct fix and is what we use now. Making
+the variable `allocatable` is *not* a reliable fix in the full application — it only moves the
+bug to other kernels, since the defect (misunderstanding the refcount/presence semantics) was
+not actually about storage class.
 
 ## Source
 

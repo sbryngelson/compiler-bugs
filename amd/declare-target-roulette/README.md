@@ -1,6 +1,16 @@
 # AMD flang: declare-target read correctness depends on an incidental push choice ("roulette")
 
-Minimal standalone reproducer (4 files, ~40 lines) for an AMD flang (ROCm) OpenMP-offload bug.
+Minimal standalone reproducer (4 files, ~40 lines) for an AMD flang (ROCm) OpenMP-offload issue.
+
+## Resolution: NOT A BUG — working as intended
+
+Same root cause as `../declare-target-static-tu/`: a `declare target` SAVE variable is mapped
+once with an infinite device reference count, so `target enter data map(to:)` no-ops on the
+presence check and never re-copies, while `target update to` always copies. `rs_map` (pushed via
+`enter data map`) reads stale; `rs_upd` (pushed via `update to`) reads correctly — exactly as
+OpenMP's refcounting semantics predict. Confirmed and closed as working-as-intended on the
+companion issue. Fix: use `target update to` (or `map(always,to:)`) for `declare target` SAVE
+variables, never plain `map(to:)`/`enter data map(to:)` after the first mapping.
 
 ## Symptom
 
@@ -53,8 +63,8 @@ reproduce on the newest available drop, AFAR 23.2.0 (LLVM `23.0.0git`, dated 202
 
 ## Filed upstream
 
-- AMD ROCm: https://github.com/ROCm/llvm-project/issues/2890
-- LLVM:     https://github.com/llvm/llvm-project/issues/203711
+- AMD ROCm: https://github.com/ROCm/llvm-project/issues/2890 — closed, not planned (working as intended)
+- LLVM:     https://github.com/llvm/llvm-project/issues/203711 — closed, not planned (working as intended)
 
 ## Relation to the other reproducer
 
