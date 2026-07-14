@@ -49,6 +49,8 @@ nm fix  | grep -c omp_mapper   # 0  (defaultmap → no map entry → no mapper)
 - **Target-arch-independent** (host codegen): `--offload-arch=gfx90a|gfx942|gfx950` all emit
   `mapper=1`. Only gfx90a runtime-tested (gfx90a-only AFAR drop).
 - **Not node-specific**: reproduced on MI250X (`k004-001`) and MI210 (`k005-003`).
+- **Optimization-independent**: mapper emitted at every level (no `-O`, `-O0`, `-O1`, `-O2`, `-O3`);
+  `-O0` hangs identically — the defect is in the OpenMP lowering, not an optimization pass.
 
 ## Workaround
 
