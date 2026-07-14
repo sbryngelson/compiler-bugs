@@ -81,6 +81,20 @@ Bug reports (open): [ROCm/llvm-project#2909](https://github.com/ROCm/llvm-projec
 
 ---
 
+### `amd/derived-type-mapper-hang/` — amdflang: per-component default mapper for a flat derived type hangs the offload runtime — **OPEN**
+
+flang 23 emits a per-component `._omp_default_mapper` for a *flat* derived type (fixed-size
+components only, no allocatable/pointer members — trivially bit-copyable). A `target` kernel mapping
+an array of that type invokes the mapper per element at runtime — `N × #components` component pushes
+through `targetDataBegin`/`targetDataMapper` — a multi-minute host busy-loop (99% CPU, GPU idle).
+amdflang 22 (rocm-7.2.0) does not emit the mapper. Codegen is target-arch-independent (mapper
+emitted for gfx90a/gfx942/gfx950); runtime-reproduced on MI250X and MI210. Workaround:
+`defaultmap(present:allocatable)` on the kernel (no map entry → no mapper). Found in MFC's
+block-structured AMR + immersed-boundary path.
+Bug report (open): [ROCm/llvm-project#3385](https://github.com/ROCm/llvm-project/issues/3385).
+
+---
+
 ### `intel/` — ifx: Intel GPU (PVC) OpenMP target offload bugs
 
 Four reproducers for `ifx` on Intel PVC (Aurora). See `intel/README.md` for details.
