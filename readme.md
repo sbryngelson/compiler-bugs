@@ -81,6 +81,22 @@ Bug reports (open): [ROCm/llvm-project#2909](https://github.com/ROCm/llvm-projec
 
 ---
 
+### `amd/flang-slice-assign-scratch-spill/` — amdflang: whole-array slice assignment into a private array spills to scratch — **FIXED in AFAR 23.2.0**
+
+Sibling of the firstprivate case above, same `_FortranAAssign` device-lowering class but the
+*slice-assignment* path. A runtime-bounded whole-array slice assignment `omega(0:ns) = d_cbL(:)`
+inside a register-heavy WENO `target teams distribute parallel do` kernel spills ~20 KB/work-item to
+scratch and craters occupancy — **only on the AFAR 23.1.0 drop**. flang 22 (ROCm 7.2.0) won't even
+link it (`undefined symbol: _FortranAAssign`); 23.1.0 inlines it as a scratch-spilling blob; the
+23.2.0 drop (04/18/26) lowers it cleanly (0 B). So the slice path was fixed in 23.2.0, while the
+firstprivate path (#2909) was not. Bites MFC only because Frontier's CI is pinned to 23.1.0, the
+interim implemented-but-spilling drop. Workaround (and the MFC fix, [MFlowCode/MFC#1628](https://github.com/MFlowCode/MFC/pull/1628)):
+reconstruct directly from the source array or copy element-by-element with an explicit indexed loop —
+byte-identical, off the `_FortranAAssign` path. `--case-optimization` (compile-time stencil count)
+independently removes the register pressure.
+
+---
+
 ### `amd/derived-type-mapper-hang/` — amdflang: per-component default mapper for a flat derived type hangs the offload runtime — **FIX POSTED** ([llvm#209645](https://github.com/llvm/llvm-project/pull/209645))
 
 flang 23 emits a per-component `._omp_default_mapper` for a *flat* derived type (fixed-size

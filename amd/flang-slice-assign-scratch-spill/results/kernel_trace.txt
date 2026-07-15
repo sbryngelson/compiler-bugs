@@ -1,0 +1,18 @@
+Measured on AMD HPC Fund (MI250X / gfx90a, one GCD), N=4000,
+OMP_TARGET_OFFLOAD=MANDATORY LIBOMPTARGET_KERNEL_TRACE=1, sweep kernel __QQmain_l*.
+
+SLICE variant (omega(0:ns) = d_cbL(:)) across drops:
+  flang 22 (ROCm 7.2.0)   : link FAIL  -> ld.lld: undefined symbol: _FortranAAssign
+  AFAR 23.1.0 (03/12/26)  : scratch = 20736 B   occupancy 12%    (SPILL)
+  AFAR 23.2.0 (04/18/26)  : scratch =     0 B   occupancy 15%    (fixed)
+  AFAR 23.2.1             : scratch =     0 B   occupancy 15%    (fixed)
+
+Variant contrast on AFAR 23.1.0 (only SLICE spills):
+  variant       scratch
+  NONE              0 B
+  SLICE         20736 B   <-- whole-array slice copy
+  ONE_SCHEME        0 B
+  CONST_NS          0 B   (ns compile-constant; ~32 VGPR vs ~90 on 23.2.1)
+
+Real MFC s_weno kernel on AFAR 23.1.0: 17920 B scratch (matches the reproducer),
+dropped to 92 B by removing the slice copy (MFlowCode/MFC#1628).

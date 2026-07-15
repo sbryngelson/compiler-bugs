@@ -1,0 +1,12 @@
+r_*
+rslice_*
+dev.elf
+d231.elf
+o*.bin
+*.o
+*.mod
+*.img
+err.log
+out.log
+e.log
+o.log
