@@ -1,0 +1,4 @@
+23.1.0 (correct):
+AMD AFAR drop #23.1.0 03/12/26 clang version 23.0.0git (https://github.com/ROCm/llvm-project.git 02b3a632850d02c7638325eba7095c23c26621dd+PATCHED:440716f8b87be9d8e20ed910e10e5b6d14d57cf6)
+23.2.0 (buggy):
+AMD AFAR drop #23.2.0 04/18/26 clang version 23.0.0git (https://github.com/ROCm/llvm-project.git 35849413f758a222a8094acf1ec81eb80f601335+PATCHED:440716f8b87be9d8e20ed910e10e5b6d14d57cf6)

@@ -1,0 +1,38 @@
+FRONTEND WRAP-FLAG CENSUS — same TU (m_weno_coefficients.fpp.f90), frontend IR captured
+with: <full compile command> -O3 -mllvm -opt-bisect-limit=0 -S -emit-llvm
+(pre_23.1.0.ll vs pre_23.2.0.ll in this directory)
+
+  flang 23.1.0:  gep_nusw_nuw=0    add_nuw_nsw=0    mul_nuw=0     sub_nuw=0   add_nsw=1132
+  flang 23.2.0:  gep_nusw_nuw=491  add_nuw_nsw=715  mul_nuw=1136  sub_nuw=62  add_nsw=417
+
+The 23.2.0-only unsigned-no-wrap claims are FALSE for this code: the arrays are
+box-based (descriptor) module allocatables with lower bound -buff_size (negative), and
+several sections are negative-stride (e.g. s_cb(i+4:i-3:-1)) -> offsets/index products
+are negative at runtime -> nuw is violated -> poison.
+
+CAUSALITY EXPERIMENTS — same TU, same 23.2.0 backend lowering (clang -c -O0 of the
+optimized .ll), relinked into the otherwise-unchanged simulation binary, full WENO7
+golden test as oracle:
+
+  LEG1  23.2.0 frontend IR, UNOPTIMIZED (no opt run)            -> PASS
+        (harness validated; poison flags are harmless until an optimizer exploits them)
+  LEG2  23.2.0 IR, sed-strip ONLY 'getelementptr nusw nuw',
+        then 23.2.0 opt -passes='default<O3>'                   -> FAIL but abs error
+        collapses 2.1e-4 -> 3.2e-9 (residual = remaining arithmetic nuw flags)
+  LEG3  23.1.0 frontend IR through 23.2.0 opt <O3>              -> PASS
+        (optimizer exonerated: clean IR -> correct code from the "bad" opt)
+  Also: 23.2.0 IR through 23.1.0 opt <O3>                       -> FAIL
+        (the OLD optimizer miscompiles the poisoned IR too - it's the IR, not the pass)
+  FULL-STRIP  23.2.0 IR, strip gep nusw nuw + add/mul/sub nuw (keep nsw),
+        then 23.2.0 opt <O3>                                    -> PASS (both weno7 tests)
+
+-fwrapv on flang 23.2.0: accepted, but removes only nsw; the bogus nuw remain
+(gep_nusw_nuw=491, add_nuw=715 unchanged). No option disables the emission.
+
+COMMITS:
+  bug:  ROCm/llvm-project 7e0ef4a2031d  "[Flang] Apply nusw nuw flags on array_coor
+        gep's" (PR #184573, 2026-03-13; guards only `sub` for shifted arrays:
+        subFlags = isShifted ? nsw : nsw|nuw — add/mul/GEP nuw unconditional)
+  fix:  llvm/llvm-project 2315381d7112  "[flang] Do not set nuw flag on
+        mul/add/getelementptr when lowering array_coor from a box base"
+        (PR #198014, fixes #197393, 2026-05-20)

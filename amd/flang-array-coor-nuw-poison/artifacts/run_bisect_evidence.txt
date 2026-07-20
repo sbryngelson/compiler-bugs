@@ -1,0 +1,52 @@
+RUN-BASED opt-bisect-limit BISECT — definitive localization of the miscompiling pass
+=====================================================================================
+
+Method: recompile ONLY m_weno_coefficients.fpp.f90 at
+  amdflang -O3 -mllvm -opt-bisect-limit=N   (all other .o unchanged),
+relink the simulation binary, run the WENO7 golden test (UUID 7B71820F) as the
+oracle. Binary-search N for the PASS->FAIL transition. (opt-bisect-limit=N runs
+optional passes 1..N and skips N+1..; required codegen still runs, so the object
+is valid but under-optimized.)
+
+Total optional passes on this TU: 2510
+
+Endpoints (validate the oracle):
+  N=1     -> PASS   (routine essentially unoptimized -> correct)
+  N=2510  -> FAIL   (full -O3 -> the 2.1e-4 miscompile)
+
+Binary search:
+  N=1256 -> FAIL
+  N=628  -> PASS
+  N=942  -> FAIL
+  N=785  -> FAIL
+  N=706  -> FAIL
+  N=667  -> PASS
+  ... (converged) ...
+  largest PASS N=703 ; first FAILING N=704
+
+=> The single pass whose ENABLEMENT flips WENO7 from correct to wrong is
+   invocation 704:
+
+   BISECT: running pass (704) loop-unroll-full on loop %.preheader2119
+       in function _QMm_weno_coefficientsPs_compute_weno_coefficients_impl
+
+At opt-bisect-limit=704 nothing after 704 runs, so the wrong VALUES are present
+immediately after loop-unroll-full — i.e. the full-unroll transform itself emits
+incorrect code (not a downstream pass acting on its output).
+
+Loops newly fully-unrolled at the 703->704 transition (-Rpass=loop-unroll, -g):
+   m_weno_coefficients.fpp:297  completely unrolled loop with 4 iterations
+   m_weno_coefficients.fpp:310  completely unrolled loop with 4 iterations
+   m_weno_coefficients.fpp:322  completely unrolled loop with 4 iterations
+   (these are the 4-wide  y = s_cb(slice) - s_cb(slice)  difference-vector
+    array ops feeding the poly_coef formulas; several use reversed slices, stride -1)
+
+CROSS-CHECK — an earlier run-bisect on the ORIGINAL (pre-split) m_weno.fpp,
+where the routine was inline, landed on the same pass:
+   opt-bisect-limit=1490 -> PASS, =1491 -> FAIL
+   BISECT: running pass (1491) loop-unroll-full on ... compute_weno_coefficients
+
+FIX CONFIRMED: compiling m_weno_coefficients at -O1 (which omits loop-unroll-full)
+makes WENO7 pass on 23.2.0. -O2 still fails. Targeted flags do NOT help
+(-fno-unroll-loops, -mllvm -unroll-count=1, -mllvm -unroll-full-max-count=0 all
+still FAIL) because flang's -O3 pipeline adds LoopFullUnrollPass unconditionally.

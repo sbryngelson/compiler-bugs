@@ -114,6 +114,31 @@ Bug report (open): [ROCm/llvm-project#3385](https://github.com/ROCm/llvm-project
 
 ---
 
+### `amd/flang-array-coor-nuw-poison/` — amdflang: false `nuw` flags on box-based array addressing → wrong answers — **FIXED UPSTREAM, AWAITING AFAR DROP**
+
+flang stamps unsigned-no-wrap flags (`nusw nuw` on `array_coor` GEPs, `nuw` on the index add/mul)
+unconditionally, including for descriptor arrays whose offsets are legitimately negative — negative
+lower bounds (`-buff_size`) and negative-stride sections (`s_cb(i+4:i-3:-1)`). The claims are false,
+so the IR carries poison and any correct optimizer may miscompile; in MFC the WENO7 coefficient
+tables come out subtly wrong and the golden tests fail by **abs 2.1e-4** at shock fronts (a wrong
+answer, not a crash). Host codegen, so it hits GPU builds only because they compile the host with
+amdflang. Introduced by [llvm/llvm-project#184573](https://github.com/llvm/llvm-project/pull/184573)
+(2026-03-13) — one day after the 23.1.0 drop was cut, which is why 23.1.0 is clean and 23.2.0/23.2.1
+are not. Proven by a flag census (0 vs 491+715+1136 wrap flags on the same TU) plus a causality
+matrix: 23.1.0's IR through 23.2.0's `opt` is correct, 23.2.0's IR through *either* version's `opt`
+is wrong, and stripping the `nuw` flags alone fixes it. A naive `-opt-bisect-limit` bisect blames
+`loop-unroll-full`, which is innocent — it is just the first pass to exploit the poison. No flag
+disables the emission (`-fwrapv` kills only `nsw`). Fixed upstream in
+[llvm/llvm-project#198014](https://github.com/llvm/llvm-project/pull/198014) (2026-05-20, fixes
+[llvm#197393](https://github.com/llvm/llvm-project/issues/197393)), which every 23.2.x drop predates —
+so the ask is a drop based on ≥ 05/20 or a cherry-pick. Workaround (and the MFC fix,
+[MFlowCode/MFC#1660](https://github.com/MFlowCode/MFC/pull/1660)): write the reversed slices
+element-wise — value-identical, and the offsets are then non-negative. Per-pattern only: the false
+flags are in every TU of a 23.2.x build, so keep Frontier pinned to 23.1.0.
+Bug report (open): [ROCm/llvm-project#3471](https://github.com/ROCm/llvm-project/issues/3471).
+
+---
+
 ### `intel/` — ifx: Intel GPU (PVC) OpenMP target offload bugs
 
 Four reproducers for `ifx` on Intel PVC (Aurora). See `intel/README.md` for details.
