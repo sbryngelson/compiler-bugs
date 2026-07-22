@@ -14,6 +14,7 @@ its own README with the full analysis; this page is only an index.
 | [no-loop-array-ops](amd/no-loop-array-ops) | [llvm#198621](https://github.com/llvm/llvm-project/issues/198621) | [ROCm#3058](https://github.com/ROCm/llvm-project/pull/3058) | fixed downstream; upstream issue open |
 | [openmp-outlined-not-inlined](amd/openmp-outlined-not-inlined) | [llvm#211287](https://github.com/llvm/llvm-project/pull/211287), [llvm#211255](https://github.com/llvm/llvm-project/pull/211255) | [ROCm#3485](https://github.com/ROCm/llvm-project/pull/3485) | PRs open |
 | [flang-firstprivate-array-occupancy](amd/flang-firstprivate-array-occupancy) | [llvm#203890](https://github.com/llvm/llvm-project/issues/203890) | [ROCm#2909](https://github.com/ROCm/llvm-project/issues/2909) | open; unbuildable on stock ROCm |
+| [flang-rt-device-unresolvable-refs](amd/flang-rt-device-unresolvable-refs) | — | [ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517) | open; device Fortran links only at `-O3` |
 | [runtimes-fortran-modules-triple](amd/runtimes-fortran-modules-triple) | [llvm#211137](https://github.com/llvm/llvm-project/pull/211137) | — | PR open, awaiting review |
 | [flang-reduction-dbg-verifier](amd/flang-reduction-dbg-verifier) | [llvm#211385](https://github.com/llvm/llvm-project/issues/211385) | — | open |
 | [flang-ompx-attribute](amd/flang-ompx-attribute) | [llvm#211133](https://github.com/llvm/llvm-project/issues/211133) | — | RFC, no engagement |
