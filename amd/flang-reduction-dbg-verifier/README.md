@@ -2,7 +2,9 @@
 
 Target: gfx90a (MI210/MI250X). Compiler: upstream flang 24.0.0git @ `119b31fd3064`.
 
-**Status: OPEN.** Reported: [llvm/llvm-project#211385](https://github.com/llvm/llvm-project/issues/211385).
+**Status: FIX POSTED.** Reported: [llvm/llvm-project#211385](https://github.com/llvm/llvm-project/issues/211385).
+Fix: [llvm/llvm-project#211395](https://github.com/llvm/llvm-project/pull/211395).
+Confirmed on tip `02c51adb8ff2` as well as `119b31fd3064`.
 
 ## Bug
 
@@ -57,3 +59,37 @@ OpenMP on the **host** (`threadprivate` + `single`), fixed 2024. This is the dev
 ## Reproducer
 
 `reduction_dbg_verifier.f90` — build per the comment at the top of the file.
+
+## Root cause
+
+The device reduction helpers emitted by `OpenMPIRBuilder` (`_omp_reduction_shuffle_and_reduce_func`,
+`_omp_reduction_inter_warp_copy_func`, and the four global/list copy and reduce helpers) are created
+with **no debug info of their own**, but the builder's current debug location is left set while
+their bodies are emitted. Their instructions therefore carry `DILocation`s scoped to the enclosing
+kernel's subprogram.
+
+`Verifier`'s subprogram check only applies to a function that *has* a `DISubprogram`, so the helpers
+are never flagged themselves. The mismatch becomes visible only when the inliner folds a helper into
+a function that does have one — which is why the pre-link IR is clean at every `-O` level and the
+failure appears during the device LTO link.
+
+## How it was narrowed
+
+1. Pre-link IR verifies clean at `-O0/-O1/-O2/-O3`; `opt -passes='openmp-opt'` alone is clean too.
+2. Reduced to an `opt`-only reproducer, no flang needed:
+   `opt -passes='lto<O3>' out.img.0.2.internalize.bc` (from `ld.lld --save-temps`).
+3. `-opt-bisect-limit` binary search over 464 points → first break at 301, `inline` on the outlined
+   region, right after `inline` on `__kmpc_gpu_xteam_reduce_nowait`.
+4. Dumping that module with `-disable-verify` shows 167 instructions in the outlined function scoped
+   to the kernel's subprogram.
+5. Walking the *pre*-inline module for functions with no `!dbg` attachment that nevertheless carry
+   `DebugLoc`s finds exactly the two helpers this reduction uses, with 54 and 5 locations, all
+   scoped to the kernel.
+
+## Fix
+
+Clear the debug location after switching the insert point into each helper. Applied to all six
+helpers that follow the pattern, not only the two this reproducer exercises.
+
+Verified on gfx90a: `-O2 -g`, `-O3 -g` and `-O3 -Rpass-analysis=kernel-resource-usage` all build,
+and the reduction returns the correct value. The added regression test fails without the change.

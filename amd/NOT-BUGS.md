@@ -1,4 +1,4 @@
-# Investigated and not bugs
+# Investigated: not bugs, or not yet established
 
 Recorded so they are not re-derived.
 
@@ -25,3 +25,21 @@ which is why [llvm#211287](https://github.com/llvm/llvm-project/pull/211287) wor
 
 **Intermittent `ld.lld` crash on a scalar reduction.** Seen once, not reproducible: 0/10 on upstream
 flang and 0/10 on AFAR 23.2.1. Not filed.
+
+## Undetermined
+
+**Array-reduction strategy divergence (2026-07-22).** `reduction(+:s)` on `real(8) :: s(N)` in a
+`target teams distribute parallel do` lowers three different ways, gfx90a:
+
+| | scratch B/lane | dynamic stack | runtime entries |
+|---|---|---|---|
+| AFAR 23.2.1 | `8 + 24N` | no | `nvptx_parallel_reduce`, `nvptx_teams_reduce`, `reduction_get_fixed_buffer` |
+| ROCm 7.2.0 | `112 + 16N` | **yes** | — |
+| upstream `119b31fd3064` | `272 + 40N` | **yes** | `gpu_xteam_reduce_nowait`, `nvptx_parallel_reduce` |
+
+Upstream carries both a large fixed overhead and the steepest per-element cost, but it also reports
+*higher* occupancy than AFAR at N=8 (7 vs 5), so it is not clearly worse. The dynamic stack is not a
+consequence of the un-inlined outlined region — `-fopenmp-assume-no-nested-parallelism` leaves it in
+place. Deciding whether any of this is a bug needs a timing harness, which has not been built. Not
+filed.
+
