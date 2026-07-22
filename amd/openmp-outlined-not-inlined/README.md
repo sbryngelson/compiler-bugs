@@ -4,8 +4,18 @@ Target: gfx90a (MI250X), also reproduced on gfx942/gfx950. Compiler: upstream fl
 (`llvm/llvm-project @ 119b31fd3`, built with `clang;lld;mlir;flang` + `openmp/offload/flang-rt`
 runtimes and an `amdgcn-amd-amdhsa` runtime target).
 
-**Status: FIX POSTED.** Reported: [llvm/llvm-project#211132](https://github.com/llvm/llvm-project/issues/211132).
-Fix: [llvm/llvm-project#211136](https://github.com/llvm/llvm-project/pull/211136).
+**Status (2026-07-22): OPEN, fix rerouted.** Reported: [llvm/llvm-project#211132](https://github.com/llvm/llvm-project/issues/211132) (open).
+The original `alwaysinline` fix [llvm/llvm-project#211136](https://github.com/llvm/llvm-project/pull/211136)
+was **closed without merging**. Superseded by two narrower PRs, both open:
+[#211255](https://github.com/llvm/llvm-project/pull/211255) — *partially addresses* #211132; don't apply
+the cold-callsite inline threshold in kernels (adds `TTI::applyColdCallSiteThreshold`, false for AMDGPU
+entry functions). DeviceRTL's `always_inline` `__kmpc_parallel_60` lands its `OMP_UNLIKELY` branch
+weights in every OpenMP kernel, so the microtask call on the serialized path reads as cold at ~1/4000
+of entry frequency, stays out of line, and the kernel stops being a leaf.
+[#211287](https://github.com/llvm/llvm-project/pull/211287) — *fixes* #211132; `AAKernelInfo` resolves
+the loop-body callback of the `__kmpc_*_static_loop_*` entries (a direct function operand) instead of
+treating it as opaque. Also removes the trigger for
+[#198621](https://github.com/llvm/llvm-project/issues/198621).
 
 ## Tracking
 

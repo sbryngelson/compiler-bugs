@@ -33,6 +33,9 @@ Fixed upstream: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pu
 `amd-staging` 2026-06-25, re-landing [#2602](https://github.com/ROCm/llvm-project/pull/2602)).
 Reported in [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601) and
 [llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621) (upstream, still open).
+Update 2026-07-22: [llvm#211287](https://github.com/llvm/llvm-project/pull/211287) (open) states it also
+**removes the trigger** for #198621 — `AAKernelInfo` stops recording an unknown parallel region for the
+static-loop body, so `MayUseNestedParallelism` is no longer wrongly written as 1 for flang kernels.
 
 ---
 
@@ -139,7 +142,7 @@ Bug report (open): [ROCm/llvm-project#3471](https://github.com/ROCm/llvm-project
 
 ---
 
-### `amd/openmp-outlined-not-inlined/` — flang/OpenMPIRBuilder: device-outlined target regions left un-inlined — **FIX POSTED** ([llvm#211136](https://github.com/llvm/llvm-project/pull/211136))
+### `amd/openmp-outlined-not-inlined/` — flang/OpenMPIRBuilder: device-outlined target regions left un-inlined — **OPEN, FIX REROUTED** ([llvm#211287](https://github.com/llvm/llvm-project/pull/211287))
 
 flang lowers an OpenMP `target teams distribute parallel do` body into a separate AMDGPU device
 function, and the inliner declines it (`cost=1280 > threshold=495`), so it is register-allocated
@@ -148,8 +151,15 @@ without the enclosing kernel's occupancy target: 212 VGPR / 48 B scratch / occ 2
 `OpenMPIRBuilder::applyWorkshareLoopTarget` (taken unconditionally on device) passes to
 `__kmpc_distribute_for_static_loop_4u`, which inflates the body past the fixed threshold. Fix marks
 outlined regions `alwaysinline` on device → 94 / 0 / 5 and up to 1.32x on a WENO5+HLLC kernel.
-Reported [llvm#211132](https://github.com/llvm/llvm-project/issues/211132), fix
-[llvm#211136](https://github.com/llvm/llvm-project/pull/211136). Fortran + C control reproducers.
+Reported [llvm#211132](https://github.com/llvm/llvm-project/issues/211132). Fortran + C control reproducers.
+Status 2026-07-22: the `alwaysinline` fix [llvm#211136](https://github.com/llvm/llvm-project/pull/211136)
+was **closed without merging**; the work was rerouted into two narrower PRs, both open —
+[llvm#211255](https://github.com/llvm/llvm-project/pull/211255) *partially addresses* it by not applying
+the cold-callsite inline threshold in kernels (DeviceRTL's `always_inline` `__kmpc_parallel_60` puts its
+`OMP_UNLIKELY` branch weights in every OpenMP kernel, so the microtask call looks cold at ~1/4000 of
+entry frequency and stays out of line), and
+[llvm#211287](https://github.com/llvm/llvm-project/pull/211287) *fixes* it by resolving the loop-body
+callback of the `__kmpc_*_static_loop_*` entries instead of treating it as opaque.
 
 ---
 
@@ -181,7 +191,7 @@ failing confusingly, not "offload is unbuildable". Reported
 
 ---
 
-### `amd/openmp-module-gpu-triple/` — openmp/module cmake: GPU-triple regex misses `amdgpu-amd-amdhsa` — **FIX POSTED** ([llvm#211138](https://github.com/llvm/llvm-project/pull/211138))
+### `amd/openmp-module-gpu-triple/` — openmp/module cmake: GPU-triple regex misses `amdgpu-amd-amdhsa` — **FIXED, MERGED** ([llvm#211138](https://github.com/llvm/llvm-project/pull/211138))
 
 `openmp/module/CMakeLists.txt:29` gates `-nogpulib -flto` on `"^amdgcn|^nvptx"`, but all four
 offload cache files use the triple `amdgpu-amd-amdhsa`, which `^amdgcn` doesn't match — so the flags

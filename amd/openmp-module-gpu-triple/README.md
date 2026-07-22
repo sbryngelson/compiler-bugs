@@ -3,8 +3,9 @@
 Build-system (CMake configure-time) bug in `openmp/module/CMakeLists.txt`. Bites every recommended
 AMDGPU offload configuration, which uses the `amdgpu-amd-amdhsa` triple.
 
-**Status: FIX POSTED.** Reported: [llvm/llvm-project#211135](https://github.com/llvm/llvm-project/issues/211135).
-Fix: [llvm/llvm-project#211138](https://github.com/llvm/llvm-project/pull/211138).
+**Status (2026-07-22): FIXED — merged upstream.** Reported: [llvm/llvm-project#211135](https://github.com/llvm/llvm-project/issues/211135) (closed).
+Fix: [llvm/llvm-project#211138](https://github.com/llvm/llvm-project/pull/211138) — **merged 2026-07-22**
+(reviewed and approved by jhuber6).
 
 ## Tracking
 
