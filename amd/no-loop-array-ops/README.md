@@ -123,3 +123,22 @@ Original report: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/i
 
 - `full/` — extended test files for the active bugs above
 - `old/` — 16 tests that pass on amdflang 23.2.1 (bugs fixed or never present)
+
+## Sharper trigger (2026-07-22, AFAR 23.2.1, gfx90a)
+
+`-fopenmp-target-fast` is **not** required and is not implicated.
+
+| flags | result |
+|---|---|
+| none | PASS |
+| `-fopenmp-target-fast` alone | PASS |
+| `-fopenmp-assume-threads-oversubscription` alone | PASS |
+| `-fopenmp-assume-teams-oversubscription` alone | PASS |
+| both oversubscription flags | **FAIL: 31 of 64** |
+| both, plus `-O1` | PASS |
+| `-fopenmp-target-fast` + both | **FAIL: 31 of 64** |
+
+The trigger is the oversubscription pair together with no explicit `-O`, which matches the root
+cause since `canPromoteToNoLoop` requires both. That also clears the two assumptions target-fast
+implies: `-fopenmp-assume-no-thread-state` and `-fopenmp-assume-no-nested-parallelism` pass alone
+and together in exactly the configuration where the pair fails.

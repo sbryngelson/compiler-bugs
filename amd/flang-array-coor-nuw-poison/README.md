@@ -126,3 +126,11 @@ only by luck of which passes fire — the poison is still there.
 | `artifacts/run_bisect_evidence.txt` | run-based opt-bisect localizing the first exploiting pass |
 | `artifacts/standalone_repro_attempt.f90` | failed hand-reduction (context-dependence evidence) |
 | `artifacts/compile_command.txt`, `versions.txt` | exact command, drop/commit identities |
+
+## Status update 2026-07-22
+
+The fix commit `2315381d7112` ([llvm#198014](https://github.com/llvm/llvm-project/pull/198014)) **is**
+now an ancestor of ROCm's `amd-staging`, so the code side is done and the only outstanding ask is an
+AFAR drop cut from current staging. Confirmed still live in 23.2.1 the same day: MFC's golden-file
+suite fails exactly the 21 `weno_order=7` cases and nothing else, with and without unrelated flag
+changes.

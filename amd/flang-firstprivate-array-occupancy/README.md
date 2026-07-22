@@ -175,3 +175,24 @@ offload build, `firstprivate(Re_size)` was the only correct way to get the value
 after a module split (the declare-target read went stale — a separate bug,
 `../declare-target-static-tu/`), but it carried a deterministic 3-5x slowdown on the viscous and
 IBM GPU benchmarks until we switched to the scalar form. Cray and nvfortran builds were unaffected.
+
+## Cross-toolchain scope (2026-07-22)
+
+The "35 KB of scratch" and the "undefined symbol" are the same defect; which one you get depends
+only on whether a device build of flang-rt is installed.
+
+| toolchain | target | result |
+|---|---|---|
+| AFAR 23.2.1 | gfx90a | links; 35424 B/lane, `Dynamic Stack: True` |
+| AFAR 23.2.1 | gfx942 / gfx950 | links; 35360 B/lane (compiles-but-unsupported config) |
+| ROCm 7.2.0 amdflang | gfx90a / gfx950 | `ld.lld: undefined symbol: _FortranAAssign` |
+| upstream flang @ `02c51adb8ff2` | gfx90a / gfx950 | `ld.lld: undefined symbol: _FortranAAssign` |
+
+Checked against the installs: AFAR ships a stock
+`lib/llvm/lib/clang/23/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a` defining `_FortranAAssign`;
+ROCm 7.2.0 defines it only in the x86_64 host runtime; the upstream install has no
+`amdgcn-amd-amdhsa` runtime directory. Not arch-specific — gfx90a and gfx950 match per toolchain.
+
+So on stock ROCm 7.2.0 this does not build at all, on either MI250X- or MI355X-class hardware.
+That also argues against simply shipping a device build of the host routine: it would link
+everywhere and keep the 35 KB. The lowering needs to emit a value copy.

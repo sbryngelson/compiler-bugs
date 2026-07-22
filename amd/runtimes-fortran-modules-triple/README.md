@@ -88,3 +88,9 @@ CMake-configuration test infrastructure and this is configure-time logic with no
 ## Found in
 
 [MFC](https://github.com/MFlowCode/MFC) offload toolchain builds on AMD GPU systems.
+
+## Review state (2026-07-22)
+
+CI green, no approvals. @ldionne asked whether `config-Fortran.cmake` could move out of
+`runtimes/cmake` altogether, since libc++ is notified on all traffic there. That is orthogonal to
+this fix and @Meinersbur's call — the PR is parked on the placement question, not on the change.
