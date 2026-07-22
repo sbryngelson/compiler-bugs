@@ -43,8 +43,19 @@ settled by someone who owns the area.
 
 ## Conformance check
 
-clang accepts the direct C analogue (`#pragma omp target teams distribute parallel for
-lastprivate(t)`) with no diagnostics, so the construct is fine and this is a flang gap.
+Confirmed against the specification, not just by cross-checking clang.
+
+- OpenMP 5.2 [§11.6 distribute](https://www.openmp.org/spec-html/5.2/openmpse67.html) lists the
+  allowed clauses as "allocate, collapse, dist_schedule, firstprivate, lastprivate, order, private".
+  The only restrictions are that a list item may not be in both `firstprivate` and `lastprivate`,
+  and that the conditional modifier must not be specified. The reproducer violates neither.
+- OpenMP 5.0 [§2.13 combined/composite constructs](https://www.openmp.org/spec-html/5.0/openmpse22.html):
+  "The effect of the lastprivate clause is as if it is applied ... to the distribute construct if it
+  is among the constituent constructs."
+- LLVM's own `OMP.td` lists `OMPC_LastPrivate` in `allowedClauses` for `OMP_Distribute`,
+  `OMP_DistributeParallelDo` and `OMP_TargetTeamsDistributeParallelDo` — tables shared by clang and
+  flang, so flang accepts the clause in semantics and then aborts in lowering.
+- clang accepts the direct C analogue with no diagnostics.
 
 The `simd` workaround returns the correct value both with and without an explicit `map` of the same
 variable, so it does not rely on combining `lastprivate(t)` with `map(...:t)`.
