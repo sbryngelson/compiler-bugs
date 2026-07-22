@@ -196,3 +196,41 @@ ROCm 7.2.0 defines it only in the x86_64 host runtime; the upstream install has 
 So on stock ROCm 7.2.0 this does not build at all, on either MI250X- or MI355X-class hardware.
 That also argues against simply shipping a device build of the host routine: it would link
 everywhere and keep the 35 KB. The lowering needs to emit a value copy.
+
+## Root cause (2026-07-22)
+
+**Why the copy goes through `_FortranAAssign`.** The privatizer for a `firstprivate` array is
+generated with a *boxed* type even when the array is fixed-shape, contiguous and of trivial element
+type. `flang/lib/Lower/Support/Utils.cpp`:
+
+```cpp
+bool requiresBox = emitCopyRegion || seqTy.hasUnknownShape() ||
+                   seqTy.hasDynamicExtents() ||
+                   !fir::isa_trivial(seqTy.getEleTy());
+```
+
+`emitCopyRegion` is true exactly for `firstprivate`. This is deliberate:
+[llvm#208315](https://github.com/llvm/llvm-project/pull/208315) introduced the unboxing for
+`private` and explicitly excluded firstprivate. That matches the measured clause isolation exactly —
+`private(c)` costs 0, `firstprivate(c)` costs ~35 KB/lane.
+
+**Removing the exclusion is necessary but not sufficient.** Dropping `emitCopyRegion ||` produces a
+clean unboxed privatizer:
+
+```mlir
+omp.private {type = firstprivate} @..._firstprivate_1xf64 : !fir.array<1xf64> copy {
+^bb0(%arg0: !fir.ref<!fir.array<1xf64>>, %arg1: !fir.ref<!fir.array<1xf64>>):
+  hlfir.assign %arg0 to %arg1 : !fir.ref<!fir.array<1xf64>>, !fir.ref<!fir.array<1xf64>>
+}
+```
+
+but the link still fails: `hlfir.assign` on arrays re-emboxes both sides in HLFIR-to-FIR and calls
+the runtime anyway. The inlining branch in `ConvertToFIR.cpp` is guarded on `!lhs.isArray()`, so a
+static-shape trivial array copy never takes it. Tested — the change alone does not fix the link
+error.
+
+A fix needs both halves: unbox the firstprivate privatizer, *and* have the array copy avoid the
+runtime, either by teaching `hlfir.assign` to inline static-shape trivial array assignments or by
+having the copy region emit an explicit copy. The second is a general HLFIR change well beyond
+OpenMP, so it is not something to patch speculatively.
+
