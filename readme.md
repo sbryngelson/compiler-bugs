@@ -38,10 +38,12 @@ its own README with the full analysis; this page is only an index.
 |---|---|---|---|
 | [intel/](intel) — 4 offload bugs | ifx 2025.1.1 | none filed | reproducers only |
 
-### Adopted in MFC
+### MFC changes driven by these
 
-[#1668](https://github.com/MFlowCode/MFC/pull/1668),
-[#1660](https://github.com/MFlowCode/MFC/pull/1660),
-[#1628](https://github.com/MFlowCode/MFC/pull/1628),
-[#1588](https://github.com/MFlowCode/MFC/pull/1588),
-[#1572](https://github.com/MFlowCode/MFC/pull/1572).
+Merged: [#1660](https://github.com/MFlowCode/MFC/pull/1660) (reversed-stride WENO7 workaround for
+the `nuw` miscompile), [#1588](https://github.com/MFlowCode/MFC/pull/1588) (host-capture viscosity
+loss), [#1572](https://github.com/MFlowCode/MFC/pull/1572) (Riemann hot-path decomposition).
+
+Open: [#1668](https://github.com/MFlowCode/MFC/pull/1668)
+(`-fopenmp-assume-no-nested-parallelism` on the AMD offload path),
+[#1628](https://github.com/MFlowCode/MFC/pull/1628).
