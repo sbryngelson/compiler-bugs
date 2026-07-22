@@ -3,7 +3,7 @@
 Target: gfx90a (MI250X, MI210). Toolchain: AFAR 23.2.1 (`therock-afar-23.2.1-gfx90a-7.13.0`),
 which ships `lib/llvm/lib/clang/23/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a`.
 
-**Status (2026-07-22): OPEN** — reported downstream against ROCm.
+**Status (2026-07-22): OPEN** — reported downstream as [ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517).
 
 ## Bug
 
