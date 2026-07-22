@@ -234,3 +234,15 @@ runtime, either by teaching `hlfir.assign` to inline static-shape trivial array 
 having the copy region emit an explicit copy. The second is a general HLFIR change well beyond
 OpenMP, so it is not something to patch speculatively.
 
+## Related: the device runtime is not a viable target for this
+
+[`amd/flang-rt-device-unresolvable-refs`](../flang-rt-device-unresolvable-refs)
+([ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517)) shows that even where AFAR *does*
+ship an amdgcn `libflang_rt.runtime.a`, the archive references six symbols it never defines, and the
+chain hangs off `assign.cpp.o` — i.e. `_FortranAAssign` itself — reaching a **variadic**
+`flang_rt_verbose_abort` that AMDGPU cannot lower at all.
+
+That is the strongest argument against "just ship a device build of the routine": the routine's own
+dependency chain is structurally unlowerable on AMDGPU. The fix has to be in the lowering, so that a
+fixed-size array copy never reaches the runtime.
+

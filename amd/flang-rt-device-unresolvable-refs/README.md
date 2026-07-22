@@ -107,3 +107,13 @@ simply unlinkable there — see `amd/flang-firstprivate-array-occupancy/`
 ([ROCm#2909](https://github.com/ROCm/llvm-project/issues/2909),
 [llvm#203890](https://github.com/llvm/llvm-project/issues/203890)). This report covers the opposite
 case: AFAR *does* ship the archive, and what it ships cannot be linked below `-O3`.
+
+## Related: what reaches this chain
+
+[`amd/flang-firstprivate-array-occupancy`](../flang-firstprivate-array-occupancy)
+([llvm#203890](https://github.com/llvm/llvm-project/issues/203890),
+[ROCm#2909](https://github.com/ROCm/llvm-project/issues/2909)) is one concrete way ordinary Fortran
+lands on `_FortranAAssign` inside a `target` region: `firstprivate` of a fixed-size array is boxed by
+the privatizer and its copy-in lowers to the runtime assign. On stock ROCm 7.2.0 and upstream flang
+that is an undefined-symbol link error; on AFAR, where the archive exists, it costs ~35 KB/lane.
+
