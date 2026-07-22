@@ -139,6 +139,62 @@ Bug report (open): [ROCm/llvm-project#3471](https://github.com/ROCm/llvm-project
 
 ---
 
+### `amd/openmp-outlined-not-inlined/` — flang/OpenMPIRBuilder: device-outlined target regions left un-inlined — **FIX POSTED** ([llvm#211136](https://github.com/llvm/llvm-project/pull/211136))
+
+flang lowers an OpenMP `target teams distribute parallel do` body into a separate AMDGPU device
+function, and the inliner declines it (`cost=1280 > threshold=495`), so it is register-allocated
+without the enclosing kernel's occupancy target: 212 VGPR / 48 B scratch / occ 2, vs clang's inlined
+80 / 0 / 6 on the identical algorithm. Root cause is the by-pointer `private()` struct that
+`OpenMPIRBuilder::applyWorkshareLoopTarget` (taken unconditionally on device) passes to
+`__kmpc_distribute_for_static_loop_4u`, which inflates the body past the fixed threshold. Fix marks
+outlined regions `alwaysinline` on device → 94 / 0 / 5 and up to 1.32x on a WENO5+HLLC kernel.
+Reported [llvm#211132](https://github.com/llvm/llvm-project/issues/211132), fix
+[llvm#211136](https://github.com/llvm/llvm-project/pull/211136). Fortran + C control reproducers.
+
+---
+
+### `amd/flang-ompx-attribute/` — flang/OpenMP: no `ompx_attribute` clause in Fortran offload — **RFC** ([llvm#211133](https://github.com/llvm/llvm-project/issues/211133))
+
+clang accepts `ompx_attribute` and lowers it to LLVM function attributes; flang rejects it at parse
+time, so Fortran OpenMP offload cannot set per-kernel launch bounds / occupancy hints
+(`amdgpu-waves-per-eu`) at all. Two gaps at `119b31fd3`: `OMPC_OMPX_Attribute` has a `clangClass`
+but no `flangClass` (→ `EMPTY_CLASS`, no parser rule), and the clause is absent from every
+Fortran-spelled directive's allow-list. Filed as an RFC (not a PR) because the Fortran spelling is
+undecided — clang's `__attribute__`/`[[...]]` grammar has no Fortran analogue. A working 881-line
+proof-of-concept exists for the bare-name form. No workaround.
+[llvm#211133](https://github.com/llvm/llvm-project/issues/211133). Reproducer: `ompx_attribute.f90`.
+
+---
+
+### `amd/runtimes-fortran-modules-triple/` — runtimes/cmake: Fortran intrinsic-module probe ignores the target triple — **FIX POSTED** ([llvm#211137](https://github.com/llvm/llvm-project/pull/211137))
+
+`check_fortran_builtins_available()` probes for intrinsic modules without passing the triple (the
+`-print-file-name` query has no `--target`; the `try_compile()` fallback doesn't inherit
+`CMAKE_Fortran_COMPILER_TARGET`). Flang's modules are per-target, so a runtime configured for a GPU
+triple without flang-rt tests the *host*, succeeds, enables `RUNTIMES_FORTRAN_MODULES`, and fails
+~180 diagnostics later compiling `omp_lib.F90` for the GPU triple — instead of hitting the existing
+graceful-degradation path. Fix passes the triple via `CMAKE_Fortran_COMPILE_OPTIONS_TARGET`
+(`--target=` for Flang, empty for GNU, so gfortran is not regressed). Plausible misconfiguration
+failing confusingly, not "offload is unbuildable". Reported
+[llvm#211134](https://github.com/llvm/llvm-project/issues/211134), fix
+[llvm#211137](https://github.com/llvm/llvm-project/pull/211137). `probe.sh` shows the divergence.
+
+---
+
+### `amd/openmp-module-gpu-triple/` — openmp/module cmake: GPU-triple regex misses `amdgpu-amd-amdhsa` — **FIX POSTED** ([llvm#211138](https://github.com/llvm/llvm-project/pull/211138))
+
+`openmp/module/CMakeLists.txt:29` gates `-nogpulib -flto` on `"^amdgcn|^nvptx"`, but all four
+offload cache files use the triple `amdgpu-amd-amdhsa`, which `^amdgcn` doesn't match — so the flags
+are silently dropped from `libomp-mod` in the configs upstream recommends. (`^amdgcn` isn't dead
+code: `Triple::normalize` preserves that spelling too.) Fix computes the test once as
+`LIBOMP_TARGET_IS_GPU` and reuses it at both sites (the conditions differ, and Fortran means
+`CMAKE_Fortran_COMPILER_TARGET` also matters), rather than duplicating a widened regex. ~5 other
+`amdgcn`-only sites noted for follow-up. Reported
+[llvm#211135](https://github.com/llvm/llvm-project/issues/211135), fix
+[llvm#211138](https://github.com/llvm/llvm-project/pull/211138).
+
+---
+
 ### `intel/` — ifx: Intel GPU (PVC) OpenMP target offload bugs
 
 Four reproducers for `ifx` on Intel PVC (Aurora). See `intel/README.md` for details.
