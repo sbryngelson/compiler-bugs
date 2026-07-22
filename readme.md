@@ -17,6 +17,7 @@ its own README with the full analysis; this page is only an index.
 | [flang-rt-device-unresolvable-refs](amd/flang-rt-device-unresolvable-refs) | — | [ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517) | open; device Fortran links only at `-O3` |
 | [runtimes-fortran-modules-triple](amd/runtimes-fortran-modules-triple) | [llvm#211137](https://github.com/llvm/llvm-project/pull/211137) | — | PR open, awaiting review |
 | [flang-reduction-dbg-verifier](amd/flang-reduction-dbg-verifier) | [llvm#211385](https://github.com/llvm/llvm-project/issues/211385), [llvm#211395](https://github.com/llvm/llvm-project/pull/211395) | — | fix PR open |
+| [flang-lastprivate-distribute](amd/flang-lastprivate-distribute) | [llvm#211401](https://github.com/llvm/llvm-project/issues/211401) | — | open; `simd` workaround |
 | [flang-ompx-attribute](amd/flang-ompx-attribute) | [llvm#211133](https://github.com/llvm/llvm-project/issues/211133) | — | RFC, no engagement |
 | [flang-slice-assign-scratch-spill](amd/flang-slice-assign-scratch-spill) | — | — | fixed in AFAR 23.2.0 |
 | [declare-target-static-tu](amd/declare-target-static-tu), [declare-target-roulette](amd/declare-target-roulette) | [llvm#203711](https://github.com/llvm/llvm-project/issues/203711) | [ROCm#2890](https://github.com/ROCm/llvm-project/issues/2890) | **not a bug**; closed |
