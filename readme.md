@@ -2,6 +2,25 @@
 
 Minimal reproducers for Fortran compiler bugs encountered in HPC workloads on OLCF Frontier.
 
+### Upstream status at a glance (2026-07-22)
+
+| case | upstream | downstream | state |
+|---|---|---|---|
+| `amd/derived-type-mapper-hang` | [llvm#209645](https://github.com/llvm/llvm-project/pull/209645) | [ROCm#3385](https://github.com/ROCm/llvm-project/issues/3385) | **merged** upstream; cherry-pick requested |
+| `amd/openmp-module-gpu-triple` | [llvm#211138](https://github.com/llvm/llvm-project/pull/211138) | — | **merged**; issue [#211135](https://github.com/llvm/llvm-project/issues/211135) closed |
+| `amd/flang-array-coor-nuw-poison` | [llvm#198014](https://github.com/llvm/llvm-project/pull/198014) | [ROCm#3471](https://github.com/ROCm/llvm-project/issues/3471) | fixed upstream **and in `amd-staging`**; awaiting a drop |
+| `amd/no-loop-array-ops` | [llvm#198621](https://github.com/llvm/llvm-project/issues/198621) | [ROCm#3058](https://github.com/ROCm/llvm-project/pull/3058) | fixed downstream; upstream issue open |
+| `amd/openmp-outlined-not-inlined` | [llvm#211287](https://github.com/llvm/llvm-project/pull/211287), [llvm#211255](https://github.com/llvm/llvm-project/pull/211255) | [ROCm#3485](https://github.com/ROCm/llvm-project/pull/3485) | PRs open; [#211136](https://github.com/llvm/llvm-project/pull/211136) withdrawn |
+| `amd/flang-firstprivate-array-occupancy` | [llvm#203890](https://github.com/llvm/llvm-project/issues/203890) | [ROCm#2909](https://github.com/ROCm/llvm-project/issues/2909) | open; unbuildable on stock ROCm |
+| `amd/runtimes-fortran-modules-triple` | [llvm#211137](https://github.com/llvm/llvm-project/pull/211137) | — | PR open, CI green, awaiting review |
+| `amd/flang-ompx-attribute` | [llvm#211133](https://github.com/llvm/llvm-project/issues/211133) | — | RFC, no engagement |
+| `amd/flang-slice-assign-scratch-spill` | — | — | fixed in AFAR 23.2.0 |
+| `amd/declare-target-static-tu`, `amd/declare-target-roulette` | [llvm#203711](https://github.com/llvm/llvm-project/issues/203711) | [ROCm#2890](https://github.com/ROCm/llvm-project/issues/2890) | **not a bug**; closed |
+
+Adopted in MFC as a result: [MFlowCode/MFC#1668](https://github.com/MFlowCode/MFC/pull/1668)
+(`-fopenmp-assume-no-nested-parallelism` on the AMD offload path),
+[#1628](https://github.com/MFlowCode/MFC/pull/1628), [#1660](https://github.com/MFlowCode/MFC/pull/1660).
+
 ---
 
 ### `cce/` — Cray CCE 15.0.1 Fortran + OpenACC
@@ -33,9 +52,17 @@ Fixed upstream: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pu
 `amd-staging` 2026-06-25, re-landing [#2602](https://github.com/ROCm/llvm-project/pull/2602)).
 Reported in [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601) and
 [llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621) (upstream, still open).
-Update 2026-07-22: [llvm#211287](https://github.com/llvm/llvm-project/pull/211287) (open) states it also
-**removes the trigger** for #198621 — `AAKernelInfo` stops recording an unknown parallel region for the
-static-loop body, so `MayUseNestedParallelism` is no longer wrongly written as 1 for flang kernels.
+Update 2026-07-22, sharper trigger measured on AFAR 23.2.1 / gfx90a: `-fopenmp-target-fast` is **not**
+required and is not implicated. Alone, each of target-fast, threads-oversubscription and
+teams-oversubscription passes; the **oversubscription pair together, with no explicit `-O`**, is the whole
+trigger (`FAIL: 31 of 64`, three runs of three). Any `-O1`/`-O3` masks it. That also clears the two
+assumptions target-fast implies: `-fopenmp-assume-no-thread-state` and
+`-fopenmp-assume-no-nested-parallelism` pass alone and together in exactly the configuration where the
+pair fails — they were guilty by association only.
+Also [llvm#211287](https://github.com/llvm/llvm-project/pull/211287) (open) **removes the trigger**:
+`AAKernelInfo` stops recording an unknown parallel region for the static-loop body, so
+`MayUseNestedParallelism` is no longer wrongly written as 1 for flang kernels, which is the step this
+issue identifies as blocking the `omp_get_num_threads()` fold.
 
 ---
 
@@ -65,20 +92,47 @@ SAVE variables. Same reports
 
 ---
 
-### `amd/flang-firstprivate-array-occupancy/` — amdflang: `firstprivate` of a small array spills to scratch — **OPEN**
+### `amd/flang-firstprivate-array-occupancy/` — flang/OpenMP: `firstprivate` of an array is unbuildable on stock ROCm and costs ~35 KB/lane where it links — **OPEN**
 
-A `firstprivate` clause on a small fixed-size integer array (8 bytes) on a register-heavy
-`target teams distribute parallel do` kernel spills ~20-35 KB/work-item to scratch, pins AGPRs at
-the hardware maximum, and drops occupancy to one wave per SIMD — a 30-50x slowdown. The same two
-integers passed as scalars, or as a plain `private` array seeded from those scalars, cost nothing.
-Isolation (constant-indexed firstprivate array still spills; dynamically-indexed *private* array
-does not) shows the trigger is `firstprivate` of an array, not the indexing. The copy-in is lowered
-through the Fortran array-assignment runtime (`_FortranAAssign`) rather than a value copy:
-undefined device symbol on ROCm 7.2.0, a scratch-spilling blob on afar 23.1.0/23.2.0 and the
-2026-06-12 ROCm nightly. AMD's first attempted fix
-([llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466)) only gates
-*implicit* firstprivate promotion and was verified **not** to fix this *explicit*
-`firstprivate(array)` case; AMD is now routing it to their internal team.
+`firstprivate` copy-in of a fixed-size array is lowered through the Fortran array-assignment
+runtime (`_FortranAAssign`) instead of a value copy. That single decision produces two different
+symptoms depending only on whether a device build of flang-rt happens to be installed.
+
+Minimal trigger (`firstprivate_one_element.f90`, 2026-07-22): a **one-element** `real(8)` array —
+8 bytes — on a trivial kernel. No register pressure needed, contrary to the original report.
+
+| toolchain | target | result |
+|---|---|---|
+| AFAR 23.2.1 | gfx90a | links; **35424 B/lane scratch**, `Dynamic Stack: True` |
+| AFAR 23.2.1 | gfx942 / gfx950 | links; 35360 B/lane (unsupported config, codegen evidence only) |
+| ROCm 7.2.0 amdflang | gfx90a / gfx950 | **`ld.lld: undefined symbol: _FortranAAssign`** |
+| upstream flang @ `02c51adb8ff2` | gfx90a / gfx950 | **`ld.lld: undefined symbol: _FortranAAssign`** |
+
+Where it links the resource fields degenerate to unresolved symbolic expressions (the kernel keeps
+an out-of-line call), so occupancy is not statically determinable either. Deterministic, 20 runs
+out of 20.
+
+Clause isolation, same kernel, only the clause changed: `private(c)` 0, `shared(c)` 0, no clause 0,
+`firstprivate` of a **scalar** 0. So it is `firstprivate`-of-an-array specifically — not the array,
+not the indexing, not privatization. Size sweep `c(1)`/`c(8)`/`c(16)` gives 35424/35552/35680, i.e.
+a fixed ~35.4 KB penalty plus 8 bytes per element, which localizes the cost to the copy-in path
+rather than anything proportional to the data.
+
+Why the split, checked against the installs: AFAR ships a stock
+`lib/llvm/lib/clang/23/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a` defining `_FortranAAssign`;
+ROCm 7.2.0 defines it only in the x86_64 host runtime; the upstream install has no
+`amdgcn-amd-amdhsa` runtime directory at all. Not arch-specific — gfx90a and gfx950 behave
+identically per toolchain.
+
+**Consequence:** on the shipping ROCm 7.2.0 compiler, `firstprivate` of an array in a `target`
+region does not build, on either MI250X- or MI355X-class hardware. MFC builds only because AFAR
+happens to ship the device runtime, and pays ~35 KB/lane for it. This also argues against the
+obvious fix: shipping a device build of the host routine would make it link everywhere and keep
+the 35 KB. The lowering is what needs changing.
+
+AMD's first attempted fix ([llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466))
+only gates *implicit* firstprivate promotion and was verified **not** to fix this *explicit*
+`firstprivate(array)` case; AMD routed it to their internal team on 2026-07-09.
 Bug reports (open): [ROCm/llvm-project#2909](https://github.com/ROCm/llvm-project/issues/2909),
 [llvm/llvm-project#203890](https://github.com/llvm/llvm-project/issues/203890).
 
@@ -119,7 +173,7 @@ Bug report (open, pending a drop that carries the fix): [ROCm/llvm-project#3385]
 
 ---
 
-### `amd/flang-array-coor-nuw-poison/` — amdflang: false `nuw` flags on box-based array addressing → wrong answers — **FIXED UPSTREAM, AWAITING AFAR DROP**
+### `amd/flang-array-coor-nuw-poison/` — amdflang: false `nuw` flags on box-based array addressing → wrong answers — **FIXED UPSTREAM AND IN `amd-staging`, AWAITING AFAR DROP**
 
 flang stamps unsigned-no-wrap flags (`nusw nuw` on `array_coor` GEPs, `nuw` on the index add/mul)
 unconditionally, including for descriptor arrays whose offsets are legitimately negative — negative
@@ -135,8 +189,10 @@ is wrong, and stripping the `nuw` flags alone fixes it. A naive `-opt-bisect-lim
 `loop-unroll-full`, which is innocent — it is just the first pass to exploit the poison. No flag
 disables the emission (`-fwrapv` kills only `nsw`). Fixed upstream in
 [llvm/llvm-project#198014](https://github.com/llvm/llvm-project/pull/198014) (2026-05-20, fixes
-[llvm#197393](https://github.com/llvm/llvm-project/issues/197393)), which every 23.2.x drop predates —
-so the ask is a drop based on ≥ 05/20 or a cherry-pick. Workaround (and the MFC fix,
+[llvm#197393](https://github.com/llvm/llvm-project/issues/197393)), which every 23.2.x drop predates.
+Verified 2026-07-22 that the fix commit `2315381d7112` **is** now an ancestor of ROCm's `amd-staging`,
+so the code side is done and the only remaining ask is a drop cut from current staging. Confirmed still
+live in 23.2.1 the same day: MFC's suite fails exactly the 21 `weno_order=7` cases and nothing else. Workaround (and the MFC fix,
 [MFlowCode/MFC#1660](https://github.com/MFlowCode/MFC/pull/1660)): write the reversed slices
 element-wise — value-identical, and the offsets are then non-negative. Per-pattern only: the false
 flags are in every TU of a 23.2.x build, so keep Frontier pinned to 23.1.0.
@@ -199,6 +255,12 @@ Fortran-spelled directive's allow-list. Filed as an RFC (not a PR) because the F
 undecided — clang's `__attribute__`/`[[...]]` grammar has no Fortran analogue. A working 881-line
 proof-of-concept exists for the bare-name form. No workaround.
 [llvm#211133](https://github.com/llvm/llvm-project/issues/211133). Reproducer: `ompx_attribute.f90`.
+Concrete motivation found 2026-07-22: per-kernel occupancy is a function attribute with **no global
+`-mllvm` override** (`opt --help-list-hidden` has scheduler knobs but nothing that sets waves-per-eu), so
+`ompx_attribute` is the only way to set it from OpenMP. A C user can; a Fortran user cannot, at all.
+Tempered by a negative result from the same day (see the promotion-cliff note below): in the one regime
+where you would reach for it, forcing more registers measured *worse*, so the honest claim is "no lever
+exists", not "a lever would help". No engagement on the issue since filing.
 
 ---
 
@@ -214,10 +276,13 @@ graceful-degradation path. Fix passes the triple via `CMAKE_Fortran_COMPILE_OPTI
 failing confusingly, not "offload is unbuildable". Reported
 [llvm#211134](https://github.com/llvm/llvm-project/issues/211134), fix
 [llvm#211137](https://github.com/llvm/llvm-project/pull/211137). `probe.sh` shows the divergence.
+Review state 2026-07-22: CI green, no approvals. @ldionne asked whether `config-Fortran.cmake` could move
+out of `runtimes/cmake` altogether, since libc++ is notified on all traffic there — orthogonal to this fix
+and @Meinersbur's call, so the PR is parked on that question rather than on the change itself.
 
 ---
 
-### `amd/openmp-module-gpu-triple/` — openmp/module cmake: GPU-triple regex misses `amdgpu-amd-amdhsa` — **FIXED, MERGED** ([llvm#211138](https://github.com/llvm/llvm-project/pull/211138))
+### `amd/openmp-module-gpu-triple/` — openmp/module cmake: GPU-triple regex misses `amdgpu-amd-amdhsa` — **FIXED, MERGED** ([llvm#211138](https://github.com/llvm/llvm-project/pull/211138), issue [#211135](https://github.com/llvm/llvm-project/issues/211135) closed)
 
 `openmp/module/CMakeLists.txt:29` gates `-nogpulib -flto` on `"^amdgcn|^nvptx"`, but all four
 offload cache files use the triple `amdgpu-amd-amdhsa`, which `^amdgcn` doesn't match — so the flags
@@ -228,6 +293,34 @@ code: `Triple::normalize` preserves that spelling too.) Fix computes the test on
 `amdgcn`-only sites noted for follow-up. Reported
 [llvm#211135](https://github.com/llvm/llvm-project/issues/211135), fix
 [llvm#211138](https://github.com/llvm/llvm-project/pull/211138).
+
+---
+
+### Investigated and **not** bugs — recorded so they are not re-derived
+
+**Private-array promotion cliff above ~16 equations (2026-07-22).** On a WENO5 + HLLC kernel the
+private state arrays stop being promoted between NEQ=16 and NEQ=18: scratch appears (296 → 520 B/lane,
++16 B per equation), VGPRs drop 124 → 70 and occupancy *rises* 4 → 7, with `VGPRs Spill: 0` — so it is
+not register spilling, the arrays simply live in scratch. Work-normalized throughput drops ~17% across
+the transition and stays flat after.
+
+Root cause is `amdgpu-promote-alloca-to-vector-max-regs`, default **32** 32-bit registers:
+`[16 x double]` is exactly 32 registers, `[18 x double]` is 36. But raising it is catastrophic —
+at NEQ=18, 1121 → 157 Mcell/s; at NEQ=24, 845 → 88 Mcell/s (7x and 9.7x slower). Promotion succeeds
+and the values spill anyway, scratch *doubles* to 640 B and occupancy collapses. The default is
+protecting the code; the compiler's choice is correct and the ~17% is inherent to the arrays not
+fitting a sensible register budget. `-amdgpu-unroll-threshold-private` (to 20000, both pipeline
+stages), `-amdgpu-schedule-relaxed-occupancy` and `-amdgpu-schedule-metric-bias=0` are all inert.
+
+**Kernel-environment vs module-global fold asymmetry (2026-07-22).** Forcing
+`MayUseNestedParallelism = 0` in `OMPIRBuilder` fixed a small reproducer but not a larger kernel,
+while the module-level assume flag fixed both — which looked like a second gap. It is not:
+`OpenMPOpt.cpp:3815` unconditionally overwrites the field from its own `NestedParallelism` analysis,
+so setting the frontend's initial value is always discarded. Only what the analysis concludes matters,
+which is why [llvm#211287](https://github.com/llvm/llvm-project/pull/211287) works.
+
+**Intermittent `ld.lld` crash on a scalar reduction.** Seen once, not reproducible: 0/10 on upstream
+flang and 0/10 on AFAR 23.2.1. Not filed.
 
 ---
 
