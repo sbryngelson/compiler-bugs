@@ -9,7 +9,7 @@ subroutine k(a, n, s)
   real(8), intent(out) :: s
   integer :: i
   s = 0
-  !$omp target teams distribute parallel do reduction(+:s) map(to:a(1:n)) map(from:s)
+  !$omp target teams distribute parallel do reduction(+:s)
   do i = 1, n
      s = s + a(i)
   end do

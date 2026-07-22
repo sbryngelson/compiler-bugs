@@ -40,3 +40,11 @@ settled by someone who owns the area.
 
 - `repro.f90` — the abort.
 - `lastprivate_simd_workaround.f90` — runnable, prints the value and the expected value.
+
+## Conformance check
+
+clang accepts the direct C analogue (`#pragma omp target teams distribute parallel for
+lastprivate(t)`) with no diagnostics, so the construct is fine and this is a flang gap.
+
+The `simd` workaround returns the correct value both with and without an explicit `map` of the same
+variable, so it does not rely on combining `lastprivate(t)` with `map(...:t)`.

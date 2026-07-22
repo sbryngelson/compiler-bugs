@@ -93,3 +93,9 @@ helpers that follow the pattern, not only the two this reproducer exercises.
 
 Verified on gfx90a: `-O2 -g`, `-O3 -g` and `-O3 -Rpass-analysis=kernel-resource-usage` all build,
 and the reduction returns the correct value. The added regression test fails without the change.
+
+## Conformance check
+
+The reproducer uses only `reduction(+:s)` with no `map` clause, so there is no question of combining
+a data-sharing clause with an explicit map of the same variable. clang accepts the direct C analogue
+(`#pragma omp target teams distribute parallel for reduction(+:s)`) with no diagnostics.
