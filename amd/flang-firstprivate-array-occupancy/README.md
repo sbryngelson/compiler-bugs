@@ -2,6 +2,40 @@
 
 Standalone reproducer for an AMD flang (ROCm) OpenMP offload codegen bug.
 
+## Minimal reproducer (2026-07-22)
+
+`firstprivate_one_element.f90` reduces the trigger to a **one-element** `real(8)` array on a
+trivial kernel — no register pressure, no `int(2)`, nothing else in the loop. amdflang, AFAR
+23.2.1, gfx90a, `-O3`:
+
+```
+ScratchSize [bytes/lane]: 35424
+Dynamic Stack: True
+VGPRs:     .L__omp_offloading_..._k__l11.num_vgpr          <- unresolved
+Occupancy: occupancy(8, 8, 512, 8, 8, max(...), max(...))  <- unresolved
+```
+
+8 bytes of data, 35424 bytes/lane of scratch, deterministic 20 runs out of 20. The resource
+fields degenerate to symbolic expressions because the kernel retains an out-of-line call, so
+occupancy is not statically determinable either.
+
+Clause isolation, same kernel, only the clause changed:
+
+| clause | scratch | dynamic stack |
+|---|---|---|
+| `firstprivate(c)` | **35424** | True |
+| `private(c)` | 0 | False |
+| `shared(c)` | 0 | False |
+| none | 0 | False |
+| `firstprivate(n)` (scalar) | 0 | False |
+
+Size sweep: `c(1)` 35424, `c(8)` 35552, `c(16)` 35680 — a fixed ~35.4 KB penalty plus 8 bytes
+per element, so the cost is in the copy-in path, not proportional to the data.
+
+Upstream flang at `02c51adb8ff2` does not link the same source at all:
+`ld.lld: error: undefined symbol: _FortranAAssign`. Same root cause from the other side.
+
+
 ## Status: OPEN — not fixed
 
 Still reproduces on the 2026-06-12 public ROCm nightly (`therock-dist-linux-gfx90a-7.14.0a20260612`).
