@@ -100,7 +100,7 @@ independently removes the register pressure.
 
 ---
 
-### `amd/derived-type-mapper-hang/` — amdflang: per-component default mapper for a flat derived type hangs the offload runtime — **FIX POSTED** ([llvm#209645](https://github.com/llvm/llvm-project/pull/209645))
+### `amd/derived-type-mapper-hang/` — amdflang: per-component default mapper for a flat derived type hangs the offload runtime — **FIXED, MERGED** ([llvm#209645](https://github.com/llvm/llvm-project/pull/209645))
 
 flang 23 emits a per-component `._omp_default_mapper` for a *flat* derived type (fixed-size
 components only, no allocatable/pointer members — trivially bit-copyable). A `target` kernel mapping
@@ -110,10 +110,12 @@ amdflang 22 (rocm-7.2.0) does not emit the mapper. Codegen is target-arch-indepe
 emitted for gfx90a/gfx942/gfx950); runtime-reproduced on MI250X and MI210. Root cause: `OpenMP.cpp`
 gated mapper synthesis on the captured variable being allocatable instead of consulting
 `requiresImplicitDefaultDeclareMapper()`; `perf` confirms the runtime cost is linear in
-`N × #components × #launches` (no runtime bug — the fix belongs in codegen). Fix: llvm#209645.
-Workaround: `defaultmap(present:allocatable)` on the kernel (no map entry → no mapper). Found in MFC's
-block-structured AMR + immersed-boundary path.
-Bug report (open): [ROCm/llvm-project#3385](https://github.com/ROCm/llvm-project/issues/3385).
+`N × #components × #launches` (no runtime bug — the fix belongs in codegen).
+Fixed upstream: [llvm#209645](https://github.com/llvm/llvm-project/pull/209645), merged 2026-07-22
+(`255d0013789d`), reviewed by @agozillon and @TIFitis. Expect it in a future AFAR/ROCm drop; until then
+the workaround stands: `defaultmap(present:allocatable)` on the kernel (no map entry → no mapper).
+Found in MFC's block-structured AMR + immersed-boundary path.
+Bug report (open, pending a drop that carries the fix): [ROCm/llvm-project#3385](https://github.com/ROCm/llvm-project/issues/3385).
 
 ---
 
@@ -145,21 +147,45 @@ Bug report (open): [ROCm/llvm-project#3471](https://github.com/ROCm/llvm-project
 ### `amd/openmp-outlined-not-inlined/` — flang/OpenMPIRBuilder: device-outlined target regions left un-inlined — **OPEN, FIX REROUTED** ([llvm#211287](https://github.com/llvm/llvm-project/pull/211287))
 
 flang lowers an OpenMP `target teams distribute parallel do` body into a separate AMDGPU device
-function, and the inliner declines it (`cost=1280 > threshold=495`), so it is register-allocated
-without the enclosing kernel's occupancy target: 212 VGPR / 48 B scratch / occ 2, vs clang's inlined
-80 / 0 / 6 on the identical algorithm. Root cause is the by-pointer `private()` struct that
-`OpenMPIRBuilder::applyWorkshareLoopTarget` (taken unconditionally on device) passes to
-`__kmpc_distribute_for_static_loop_4u`, which inflates the body past the fixed threshold. Fix marks
-outlined regions `alwaysinline` on device → 94 / 0 / 5 and up to 1.32x on a WENO5+HLLC kernel.
-Reported [llvm#211132](https://github.com/llvm/llvm-project/issues/211132). Fortran + C control reproducers.
-Status 2026-07-22: the `alwaysinline` fix [llvm#211136](https://github.com/llvm/llvm-project/pull/211136)
-was **closed without merging**; the work was rerouted into two narrower PRs, both open —
-[llvm#211255](https://github.com/llvm/llvm-project/pull/211255) *partially addresses* it by not applying
-the cold-callsite inline threshold in kernels (DeviceRTL's `always_inline` `__kmpc_parallel_60` puts its
-`OMP_UNLIKELY` branch weights in every OpenMP kernel, so the microtask call looks cold at ~1/4000 of
-entry frequency and stays out of line), and
-[llvm#211287](https://github.com/llvm/llvm-project/pull/211287) *fixes* it by resolving the loop-body
-callback of the `__kmpc_*_static_loop_*` entries instead of treating it as opaque.
+function which the inliner declines, so it is register-allocated without the enclosing kernel's
+occupancy target: 212 VGPR / 48 B scratch / occ 2, vs clang's inlined 80 / 0 / 6 on the identical
+algorithm. Reported [llvm#211132](https://github.com/llvm/llvm-project/issues/211132). Fortran + C
+control reproducers.
+
+**Root cause (2026-07-22), superseding two earlier wrong attributions.** It is not the inline cost, and
+not the by-pointer `private()` struct — that accounts for 720 of the cost and is irrelevant to the
+outcome. flang's device workshare loop hands the loop body to the runtime as a function pointer
+(`__kmpc_for_static_loop_4u`, or `__kmpc_distribute_for_static_loop_4u` with `distribute`), which
+OpenMPOpt's `AAKernelInfo` treats as opaque per an existing TODO. That leaves
+`MayUseNestedParallelism = 1` in the kernel environment where clang, which emits the loop inline with
+`__kmpc_for_static_init_4`, gets 0. At 1, `config::mayUseNestedParallelism()` does not fold, the
+serialized branch of `__kmpc_parallel_60` stays live and carries its own microtask call, so after that
+`always_inline` function lands in the kernel there are **two** calls to the outlined region rather than
+one. `isSoleCallToLocalFunction` is then false and `LastCallToStaticBonus` never applies — 15000 × 11 =
+165000 on AMDGPU. Measured on the same callee and module, the analysis starts at −165045 with one
+callsite and −45 with two; with two the cost model decides and loses. Every threshold figure in the
+earlier write-ups (`cost=1280 > threshold=495`) is a symptom of the missing bonus.
+
+Controlled pair isolating it, same parallel construct, flang, gfx90a: `!$omp target parallel` uses no
+runtime loop entry and gets `MayUseNestedParallelism = 0`; `!$omp target parallel do` uses
+`__kmpc_for_static_loop_4u` and gets 1.
+
+**Avoidable today with no compiler change.** `-fopenmp-assume-no-nested-parallelism` (or
+`-fopenmp-assume-no-thread-state`; either alone suffices) sets a module-level global that short-circuits
+the check before the kernel environment is read. Verified not to trigger
+[llvm#198621](https://github.com/llvm/llvm-project/issues/198621) on AFAR 23.2.0/23.2.1, upstream flang,
+or amdflang 22 (ROCm 7.2.0). Adopted in MFC.
+
+**Upstream status 2026-07-22.** The `alwaysinline` fix
+[llvm#211136](https://github.com/llvm/llvm-project/pull/211136) was **closed without merging** — it is
+what [ROCm/llvm-project#3485](https://github.com/ROCm/llvm-project/pull/3485) is backing out downstream,
+and restricting it to the workshare-loop outline alone gives no benefit (212/48/2, unchanged), so the two
+cases cannot be separated by construct. Rerouted into two open PRs:
+[llvm#211287](https://github.com/llvm/llvm-project/pull/211287) *fixes the cause* by resolving the
+loop-body callback in `AAKernelInfo`, and
+[llvm#211255](https://github.com/llvm/llvm-project/pull/211255) is an independent correctness fix that
+skips the reduced cold-callsite inline threshold in non-callable functions (GPU kernels), where an
+out-of-line call costs the whole kernel its occupancy rather than just the cold path.
 
 ---
 

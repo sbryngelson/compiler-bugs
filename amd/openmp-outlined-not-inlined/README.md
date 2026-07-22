@@ -7,11 +7,12 @@ runtimes and an `amdgcn-amd-amdhsa` runtime target).
 **Status (2026-07-22): OPEN, fix rerouted.** Reported: [llvm/llvm-project#211132](https://github.com/llvm/llvm-project/issues/211132) (open).
 The original `alwaysinline` fix [llvm/llvm-project#211136](https://github.com/llvm/llvm-project/pull/211136)
 was **closed without merging**. Superseded by two narrower PRs, both open:
-[#211255](https://github.com/llvm/llvm-project/pull/211255) — *partially addresses* #211132; don't apply
-the cold-callsite inline threshold in kernels (adds `TTI::applyColdCallSiteThreshold`, false for AMDGPU
-entry functions). DeviceRTL's `always_inline` `__kmpc_parallel_60` lands its `OMP_UNLIKELY` branch
-weights in every OpenMP kernel, so the microtask call on the serialized path reads as cold at ~1/4000
-of entry frequency, stays out of line, and the kernel stops being a leaf.
+[#211255](https://github.com/llvm/llvm-project/pull/211255) — an independent correctness fix, not a
+fix for #211132; don't apply the reduced cold-callsite inline threshold in non-callable functions, i.e.
+hardware entry points such as GPU kernels, where an out-of-line call is register allocated against the
+whole kernel's worst case and so costs the hot path too. Keyed off the existing
+`CallingConv::isCallableCC`, so it covers `SPIR_KERNEL` and `PTX_Kernel` as well; an earlier version
+added a TTI hook and was rejected in review.
 [#211287](https://github.com/llvm/llvm-project/pull/211287) — *fixes* #211132; `AAKernelInfo` resolves
 the loop-body callback of the `__kmpc_*_static_loop_*` entries (a direct function operand) instead of
 treating it as opaque. Also removes the trigger for
@@ -22,7 +23,8 @@ treating it as opaque. Also removes the trigger for
 | Where | Link / ID |
 |-------|-----------|
 | llvm/llvm-project | [#211132](https://github.com/llvm/llvm-project/issues/211132) — open |
-| Fix PR | [#211136](https://github.com/llvm/llvm-project/pull/211136) — always-inline device-outlined regions |
+| Fix PR | [#211287](https://github.com/llvm/llvm-project/pull/211287) — resolve the static-loop callback in `AAKernelInfo` |
+| Withdrawn | [#211136](https://github.com/llvm/llvm-project/pull/211136) — always-inline device-outlined regions (closed unmerged) |
 | Source | [MFC](https://github.com/MFlowCode/MFC) |
 
 ## Bug
@@ -83,27 +85,71 @@ FP chain) so nothing folds away, mirroring a finite-volume Riemann kernel.
 No compute node needed — the defect is a compile-time inliner decision, visible from
 `-Rpass-analysis=kernel-resource-usage` on a login node.
 
+## Root cause
+
+Two earlier attributions here were wrong and are recorded so they are not repeated: it is **not** that
+the body is too costly to inline, and it is **not** the by-pointer `private()` struct — that accounts
+for 720 of the cost and is irrelevant to the outcome.
+
+flang's device workshare loop passes the loop body to the runtime as a function pointer
+(`__kmpc_for_static_loop_4u`, or `__kmpc_distribute_for_static_loop_4u` with `distribute`). OpenMPOpt's
+`AAKernelInfo` treats that callback as opaque and records an unknown parallel region, per a TODO at the
+site. So `MayUseNestedParallelism` stays 1 in the kernel environment, where clang — which emits the loop
+inline with `__kmpc_for_static_init_4` — gets 0. At 1, `config::mayUseNestedParallelism()` does not
+fold, the serialized branch of `__kmpc_parallel_60` stays live carrying its own microtask call, and once
+that `always_inline` function lands in the kernel there are **two** calls to the outlined region instead
+of one. `isSoleCallToLocalFunction` is then false, so `LastCallToStaticBonus` never applies — 15000 × 11
+= 165000 on AMDGPU. Same callee, same module:
+
+| | starting inline cost |
+|---|---|
+| two callsites | −45 |
+| one callsite  | **−165045** |
+
+With one callsite it inlines unconditionally and the threshold is irrelevant. The `cost=1280,
+threshold=495` above is a symptom of the missing bonus, not the cause.
+
+Controlled pair, same parallel construct, flang, gfx90a:
+
+| construct | runtime loop entry | MayUseNestedParallelism |
+|---|---|---|
+| `!$omp target parallel`    | none                       | 0 |
+| `!$omp target parallel do` | `__kmpc_for_static_loop_4u` | 1 |
+
 ## Fix
 
-[llvm/llvm-project#211136](https://github.com/llvm/llvm-project/pull/211136) marks OpenMP outlined
-regions `alwaysinline` on target devices in `OpenMPIRBuilder::finalize()`, behind hidden
-`-openmp-ir-builder-device-always-inline-outlined` (default on). The function is still emitted, so
-generic-execution-mode runtime entry points that take its address keep working. Result: 94 VGPR /
-0 scratch / occupancy 5, and up to 1.32x throughput on a WENO5 + HLLC finite-volume kernel (best of
-50, 1M cells, MI250X), output numerically identical:
+[llvm/llvm-project#211287](https://github.com/llvm/llvm-project/pull/211287) resolves the callback (a
+direct function operand) and consults its `AAKernelInfo`, as the `__kmpc_parallel_60` handling already
+does for its parallel-region operand. Result on gfx90a: 212 / 48 B / 2 → **94 / 0 / 5**, matching what
+`alwaysinline` achieved. On gfx942 at NEQ=8/16/24: 196/64/2 → 110/0/4, 214/328/2 → 138/0/3,
+196/456/2 → 110/392/4.
 
-| NEQ | before | after | gain |
-|---|---|---|---|
-| 8  | 2507.4 | 2520.4 | 1.01x |
-| 16 | 1045.4 | 1381.7 | 1.32x |
-| 24 |  720.6 |  793.3 | 1.10x |
+The withdrawn `alwaysinline` approach ([#211136](https://github.com/llvm/llvm-project/pull/211136)) is
+what [ROCm/llvm-project#3485](https://github.com/ROCm/llvm-project/pull/3485) is backing out downstream:
+forcing the body inline grows the kernel past the AMDGPU inliner's basic-block budget, so
+`__kmpc_target_init` stops being specialized and SPMD kernels inherit a module-wide worst-case
+`amdgpu.max_num_vgpr`. Restricting it to the workshare-loop outline and leaving the parallel outline
+alone was tried and gives no benefit at all (212/48/2, unchanged), so the two cases cannot be separated
+by construct.
 
-`alwaysinline` is blunt (it inlines unconditionally on device, including generic mode and nested
-parallelism). Two structural alternatives noted in the report if a maintainer prefers: teach the
-inliner / AMDGPU TTI that leaving a device function outlined carries an occupancy cost so the trade
-is *evaluated* rather than compared against a fixed threshold; or stop routing `private()` through a
-by-pointer struct in `applyWorkshareLoopTarget`, which is what inflates the body to 1280 and would
-additionally let SROA promote the arrays pre-link.
+## Workaround (no compiler change)
+
+`-fopenmp-assume-no-nested-parallelism`, or `-fopenmp-assume-no-thread-state` — either alone suffices.
+Both set a module-level global that short-circuits the check before the kernel environment is read.
+Measured against MFC's own flag set (which already carries both oversubscription flags), within a single
+job, checksums bit-identical:
+
+| NEQ | gfx90a | gfx942 |
+|---|---|---|
+| 8  | 1.21x | 1.85x |
+| 16 | 1.34x | 2.72x |
+| 24 | 1.08x | 1.32x |
+
+Verified not to trigger [#198621](https://github.com/llvm/llvm-project/issues/198621) on AFAR 23.2.0 or
+23.2.1, upstream flang, or amdflang 22 (ROCm 7.2.0) — including in the no-`-O` configuration where the
+oversubscription pair does fail. Adopted in MFC's `cmake/MFCTargets.cmake`; MFC's golden-file suite is
+unchanged by it (568 passed / 21 failed with and without, identical failing set, all pre-existing
+`weno_order=7` cases from the AFAR 23.2.x `nuw` miscompile).
 
 ## Found in
 

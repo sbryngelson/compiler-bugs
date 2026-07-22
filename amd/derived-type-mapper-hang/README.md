@@ -2,8 +2,10 @@
 
 Target: gfx90a (MI250X, MI210). Compiler: amdflang 23.0.0git (therock-afar 23.2.0, ROCm 7.13).
 
-**Status: FIX POSTED.** Reported: [ROCm/llvm-project#3385](https://github.com/ROCm/llvm-project/issues/3385).
-Upstream fix: [llvm/llvm-project#209645](https://github.com/llvm/llvm-project/pull/209645).
+**Status: FIXED, MERGED UPSTREAM.** Reported: [ROCm/llvm-project#3385](https://github.com/ROCm/llvm-project/issues/3385).
+Upstream fix: [llvm/llvm-project#209645](https://github.com/llvm/llvm-project/pull/209645), merged
+2026-07-22 as `255d0013789d`. Not yet in any AFAR/ROCm drop — the `defaultmap(present:allocatable)`
+workaround below is still needed until a drop carries it.
 
 ## Bug
 
