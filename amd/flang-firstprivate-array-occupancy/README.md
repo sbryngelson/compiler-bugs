@@ -48,22 +48,45 @@ arguments to be the original host variable (arg 0) and the memory allocated for 
 so those two cannot overlap; skipping the aliasing check for the assignment that writes the clone
 lets the existing inlining emit a plain element loop.
 
-**The predicate has to check both sides (v2, after review).** The first revision only checked that
-the LHS was copy-region argument 1. @Saieiei pointed out that a copy region's body is unrestricted,
-so an assignment whose RHS is rooted in the *clone* would also have skipped the aliasing check and
-been lowered as a non-overlapping element loop — wrong. The predicate now additionally requires the
-RHS to be provably rooted in argument 0, walking the def chain and returning false on:
+**The predicate took three revisions to get right.** @Saieiei rejected the first two.
 
-- reaching argument 1 (the clone),
-- any value with no defining operation,
-- any operation carrying regions, since those can capture values that are not among their operands.
+*v1* checked only that the LHS was copy-region argument 1. A copy region's body is unrestricted, so
+an assignment whose RHS is rooted in the *clone* would also have skipped the aliasing check and been
+lowered as a non-overlapping element loop.
 
-Anything unrecognised keeps the normal aliasing check rather than skipping it. A negative test
-(`@_QFtestEe_firstprivate`, RHS loaded from the clone) pins this: it must stay an `hlfir.assign`.
+*v2* added a def-chain walk requiring the RHS to be rooted in argument 0, bailing out on the clone,
+on values with no defining op, and on ops carrying regions. Still too permissive on two counts:
+every *regionless* op counted as provenance-preserving, and `fir.call` is regionless while free to
+return unrelated memory through global state; and the LHS test accepted argument 1 of **any** block,
+not specifically the entry block's clone argument.
 
-The lesson generalises: "these two block arguments cannot alias" was true but was not the whole
-predicate, because it constrained only one operand of the assignment. When skipping a safety check
-based on provenance, establish provenance for *every* operand the check would have covered.
+*v3* abandons provenance reasoning entirely and matches only the canonical copy-in that lowering
+emits, confirmed by dumping the real IR:
+
+```mlir
+^bb0(%orig, %clone):
+  %0 = fir.load %orig          // boxed privatizer only
+  hlfir.assign %0 to %clone
+```
+
+It requires the assignment to be in the **entry block**, the LHS to be exactly
+`entry.getArgument(1)`, and the RHS to be either `entry.getArgument(0)` or a single `fir.load` of
+it. There is no traversal, so there is no class of operations left to reason about. Anything else
+keeps the aliasing check; being conservative costs only the inlining.
+
+Four negative tests pin the holes: `@_QFtestEd` (writes the original), `@_QFtestEe` (RHS loaded from
+the clone), `@_QFtestEf` (RHS from `fir.call`), `@_QFtestEg` (LHS is argument 1 of a non-entry
+block). The last two were verified to **fail against v2**, so both reviewer objections were
+reachable rather than theoretical.
+
+Note on `@_QFtestEg`: v2 accepted it, but it happens to be a self-assignment of the original, so
+inlining it would have been benign in that instance. It demonstrates a predicate defect, not a
+miscompile. `@_QFtestEf` is the one with real miscompile potential.
+
+The lesson generalises twice over. "These two block arguments cannot alias" was true but was not the
+whole predicate, because it constrained only one operand of the assignment. And when a safety check
+is being skipped on the basis of a pattern, matching the exact pattern the producer emits beats
+reasoning about the general case — the general case is where the reviewer keeps finding holes.
 
 Fixing this in `fir::AliasAnalysis` does not work and was tried first: classifying the clone block
 argument as `SourceKind::Allocate` describes the *descriptor*, not the data behind it, so the query
@@ -79,10 +102,12 @@ Measured on gfx90a at `02c51adb8ff2`, one-element `real(8)` array:
 | ScratchSize, device compile | 208 B/lane | 112 B/lane |
 | result on MI210 | does not link | `2.0`, correct |
 
-check-flang is clean: 4602 passed at v1, 4608 passed / 11 expected failures / 0 failures at v2 on
-`d1d3891077f6`. Both counterfactuals were verified by rebuilding without the patch, not inferred.
+check-flang is clean at every revision: 4602 passed at v1; 4608 passed at v2; 4607 passed / 11
+expected failures / 0 failures at v3 on `d1d3891077f6`. (v3's discovered count is one lower only
+because an unrelated test file from `llvm#211395` was removed from the working tree.) Both
+counterfactuals were verified by rebuilding without the patch, not inferred.
 
-`211543-inline-firstprivate-copy.patch` tracks the current PR head (v2).
+`211543-inline-firstprivate-copy.patch` tracks the current PR head (v3, `630f75a70f18`).
 
 The kernel still reports `Dynamic Stack: True` after the fix. That is
 [#211132](https://github.com/llvm/llvm-project/issues/211132), the un-inlined device-outlined

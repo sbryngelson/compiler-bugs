@@ -115,3 +115,24 @@ removal. Add files by name, and read `git show --stat` before pushing.
 predicate skipped an aliasing check after proving only the LHS was the private clone. A reviewer
 pointed out the RHS could still be rooted in that clone. "These two values cannot alias" was true
 and still insufficient, because it constrained one operand of a two-operand op.
+
+**Check the PR's base is actually in `origin/main` before blaming CI (2026-07-23).** Both
+`llvm#211137` and `llvm#211543` were branched from commits that are *not* ancestors of
+`origin/main` — `aace063fda01` and `02c51adb8ff2` respectively. Neither ever landed, so the branches
+sat on bases that do not exist upstream.
+
+The symptom was not "stale branch". On `llvm#211137` it was a **failing FreeBSD libc++ job**, a
+target with no connection to a Fortran CMake probe. I had argued the failure could not be mine, on
+solid structural grounds: `config-Fortran.cmake` has exactly one include site, guarded by
+`if ("flang-rt" IN_LIST LLVM_ENABLE_RUNTIMES OR "openmp" IN_LIST ...)`, and the FreeBSD job
+configures `libcxx;libcxxabi;libunwind`, so the changed file is never even read there. That argument
+was right about *whose fault it was* and useless for *fixing it*, and I was drifting toward
+"flaky, ignore it" — which two other PRs passing the same job already contradicted.
+
+Rebasing onto current main, with a diff verified byte-identical to the pre-rebase one, turned it
+green (`Passed (5 minutes, 18 seconds)`).
+
+Two lessons. First, `git merge-base --is-ancestor HEAD^ origin/main` costs nothing and should run
+before every push; a bad base produces failures nowhere near the change. Second, proving a failure
+is not your fault is not the same as diagnosing it, and "unrelated/flaky" is the most comfortable
+wrong answer available — prefer the cheap corrective action that produces a decisive signal.

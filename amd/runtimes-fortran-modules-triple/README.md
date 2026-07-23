@@ -149,6 +149,13 @@ Reworked to v2 per @Meinersbur (see "v2" above) and pushed; awaiting his respons
 separately asked whether `config-Fortran.cmake` could move out of `runtimes/cmake` altogether, since
 libc++ is notified on all traffic there. That is orthogonal to this fix and @Meinersbur's call.
 
+The v2 push initially failed `buildkite/libcxx-ci/freebsd-15-dot-1-amd64`, which looked impossible:
+that job configures `libcxx;libcxxabi;libunwind`, and `config-Fortran.cmake` is only included for
+`flang-rt`/`openmp`, so the changed file is never read there. The cause was a **stale base** — the
+branch was cut from `aace063fda01`, which is not an ancestor of `origin/main`. Rebasing onto current
+main, with the diff verified byte-identical to the pre-rebase one, turned FreeBSD green. See the
+measurement-traps entry in `../NOT-BUGS.md`. Current head is `fb93dc363923`, 13 checks green.
+
 ## Applicability: CMake < 3.28 only (2026-07-22 re-audit)
 
 | CMake | unpatched | patched |
