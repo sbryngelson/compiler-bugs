@@ -18,6 +18,11 @@ the loop-body callback of the `__kmpc_*_static_loop_*` entries (a direct functio
 treating it as opaque. Also removes the trigger for
 [#198621](https://github.com/llvm/llvm-project/issues/198621).
 
+The one premerge failure on #211287 is `clang-tidy/infrastructure/update-checks-list.test`, which
+fails on unmodified `main` and so fails on every open PR. Unrelated; see
+[#211393](https://github.com/llvm/llvm-project/issues/211393), fix in
+[#210574](https://github.com/llvm/llvm-project/pull/210574).
+
 ## Tracking
 
 | Where | Link / ID |

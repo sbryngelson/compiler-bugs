@@ -43,3 +43,45 @@ consequence of the un-inlined outlined region — `-fopenmp-assume-no-nested-par
 place. Deciding whether any of this is a bug needs a timing harness, which has not been built. Not
 filed.
 
+
+**AFAR 23.1.0 compiles MFC 3.1x slower than 23.2.1 (2026-07-23).** MFC's `simulation` target,
+OpenMP offload for gfx90a, MPI + FFTW, `-j 32`, same node (`k004-009`, MI250X, EPYC 7763, 128 cores),
+same source tree, same flags (`-O3 --offload-arch=gfx90a`):
+
+| AFAR drop | `simulation` build |
+|---|---|
+| 23.2.1 (`7357b5084b`) | 651 s |
+| 23.1.0 (`bb5005b6`, Frontier-pinned) | ~2040 s |
+
+Both exit 0. Node and GPU are not the variable: 23.2.1 measured 653 s on an MI210 (`k005-004`)
+against 651 s on the MI250X. This explains reports of ~40 minute MFC builds; those are on the older
+drop. Nothing to file — the newer drop already fixes it. The lever worth knowing is which drop the
+machine gives you (`amdflang --version`; 23.1.0 reports `23.1.0 03/12/26`).
+
+Not localized to a pass. On 23.2.1 the device link is ~450 s of the 651 s (~70%), roughly 60% of it
+`OpenMPOptPass`, but the ~1400 s of extra time in 23.1.0 was never attributed — `-time-passes` was
+only ever run against 23.2.1.
+
+Swapping drops needs two things beyond `OLCF_AFAR_ROOT`: wipe the CMake staging dir, since the cached
+`CMAKE_Fortran_COMPILER` otherwise points at the old drop's `flang` and fails with `undefined symbol`,
+and regenerate `$OLCF_AFAR_ROOT/include/mpi/mpi.mod`, since flang `.mod` files are not portable
+across drops.
+
+**Link-time levers that do not work (2026-07-23).** Measured against the 23.2.1 device link:
+`--lto-partitions` (only affects the parallel codegen tail, not the serial `opt()` before it),
+OpenMPOpt sub-transform toggles, Attributor iteration caps, scoping the Attributor to kernels
+(469 s vs 463 s), skipping the first of the two module-level OpenMPOpt runs (4% on a production
+build), and `-fno-offload-lto` (inert). Fully disabling `OpenMPOpt` does cut the link but costs
+**+24% runtime** (2.9350 → 3.6430 ns/gp/eq/rhs, MI210, noise floor 0.44%), so it is not an option.
+
+The one lever that works on a stock toolchain is
+`-Xoffload-linker -mllvm=-inline-threshold=150`: **−14% build, runtime-neutral**. Not currently
+applied in MFC.
+
+**flang device ThinLTO (2026-07-23).** flang never emits module summaries for device code —
+`FrontendActions.cpp` uses `BitcodeWriterPass` with a `// TODO: ThinLTO module summary support is yet
+to be enabled.` A local patch (expose `-foffload-lto` to the flang driver, use the offload LTO mode
+for device actions, emit `ThinLTOBitcodeWriterPass` + the `EnableSplitLTOUnit` module flag) does
+produce summaries, but end-to-end ThinLTO still fails: DeviceRTL entry points are `hidden`
+(`define hidden i32 @__kmpc_target_init`) and ThinLTO cannot import hidden symbols across modules.
+Not filed.

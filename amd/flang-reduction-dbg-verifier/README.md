@@ -2,7 +2,8 @@
 
 Target: gfx90a (MI210/MI250X). Compiler: upstream flang 24.0.0git @ `119b31fd3064`.
 
-**Status: FIX POSTED.** Reported: [llvm/llvm-project#211385](https://github.com/llvm/llvm-project/issues/211385).
+**Status (2026-07-23): FIX POSTED, narrowed after review.** Reported:
+[llvm/llvm-project#211385](https://github.com/llvm/llvm-project/issues/211385).
 Fix: [llvm/llvm-project#211395](https://github.com/llvm/llvm-project/pull/211395).
 Confirmed on tip `02c51adb8ff2` as well as `119b31fd3064`.
 
@@ -89,13 +90,40 @@ failure appears during the device LTO link.
    `DebugLoc`s finds exactly the two helpers this reduction uses, with 54 and 5 locations, all
    scoped to the kernel.
 
+## Prior art
+
+@abidh had already fixed this in [#147950](https://github.com/llvm/llvm-project/pull/147950)
+(merged 2025-07-11), covering eight sites with `InsertPointGuard`. It was reverted a few weeks later
+by [#150832](https://github.com/llvm/llvm-project/pull/150832) for unexplained clang reduction test
+failures, and never relanded. `main` has no `SetCurrentDebugLocation(DebugLoc())` in
+`OMPIRBuilder.cpp` today, so the bug is live.
+
+Only 6 clang tests reference the two helpers here and none enable debug info, so clearing the
+location cannot move their output. The revert was more likely caused by the guards *restoring the
+insertion point* in functions that previously left it moved, which changes IR regardless of debug
+info. Not verified — clang's suite was not run.
+
 ## Fix
 
-Clear the debug location after switching the insert point into each helper. Applied to all six
-helpers that follow the pattern, not only the two this reproducer exercises.
+Clear the debug location after switching the insert point into each helper, using
+`IRBuilder<>::InsertPointGuard` so the location is restored for the caller. A bare
+`SetCurrentDebugLocation(DebugLoc())` is not enough: `restoreIP` does not restore the debug
+location, so the cleared location leaks out.
+
+Scoped to the two device helpers this reproducer exercises (`emitShuffleAndReduceFunction`,
+`emitInterWarpCopyFunction`) rather than all six, to stay clear of whatever broke #147950. In
+`emitInterWarpCopyFunction` the guard replaces the manual `saveIP`/`restoreIP` pair. The guard added
+to `emitShuffleAndReduceFunction` is inert for the insertion point, since the sole caller already
+brackets both calls in `saveIP`/`restoreIP`.
+
+An earlier revision of the PR claimed all six helpers but in fact patched two and carried the same
+two lines duplicated four times inside `createReductionFunction`; the four global/list helpers were
+never touched. Corrected 2026-07-23.
 
 Verified on gfx90a: `-O2 -g`, `-O3 -g` and `-O3 -Rpass-analysis=kernel-resource-usage` all build,
-and the reduction returns the correct value. The added regression test fails without the change.
+and the reduction returns the correct value. The regression test fails without the change and passes
+with it. flang lit at `02c51adb8ff2`: 582 passed, 2 expected failures, 8 unsupported, and one
+failure that needs `fir-opt`, which that build config does not produce.
 
 ## Conformance check
 

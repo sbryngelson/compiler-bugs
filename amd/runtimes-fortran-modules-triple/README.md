@@ -3,8 +3,14 @@
 Build-system (CMake configure-time) bug in `runtimes/cmake/config-Fortran.cmake`. Surfaces on any
 runtimes build configured for a GPU triple without flang-rt in its runtime list.
 
-**Status: FIX POSTED.** Reported: [llvm/llvm-project#211134](https://github.com/llvm/llvm-project/issues/211134).
+**Status (2026-07-23): FIX POSTED, in review.** Reported:
+[llvm/llvm-project#211134](https://github.com/llvm/llvm-project/issues/211134).
 Fix: [llvm/llvm-project#211137](https://github.com/llvm/llvm-project/pull/211137).
+
+@ldionne asked whether `runtimes/cmake/config-Fortran.cmake` can be moved out of `runtimes/cmake`,
+which is meant for CMake shared across runtimes. That is about the file's location, not this fix —
+the file was placed there by @Meinersbur in
+[#171610](https://github.com/llvm/llvm-project/pull/171610). Offered to do the move as a separate PR.
 
 ## Tracking
 

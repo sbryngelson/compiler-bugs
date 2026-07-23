@@ -15,8 +15,8 @@ its own README with the full analysis; this page is only an index.
 | [openmp-outlined-not-inlined](amd/openmp-outlined-not-inlined) | [llvm#211287](https://github.com/llvm/llvm-project/pull/211287), [llvm#211255](https://github.com/llvm/llvm-project/pull/211255) | [ROCm#3485](https://github.com/ROCm/llvm-project/pull/3485) | PRs open |
 | [flang-firstprivate-array-occupancy](amd/flang-firstprivate-array-occupancy) | [llvm#203890](https://github.com/llvm/llvm-project/issues/203890) | [ROCm#2909](https://github.com/ROCm/llvm-project/issues/2909) | open; unbuildable on stock ROCm |
 | [flang-rt-device-unresolvable-refs](amd/flang-rt-device-unresolvable-refs) | — | [ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517) | open; device Fortran links only at `-O3` |
-| [runtimes-fortran-modules-triple](amd/runtimes-fortran-modules-triple) | [llvm#211137](https://github.com/llvm/llvm-project/pull/211137) | — | PR open, awaiting review |
-| [flang-reduction-dbg-verifier](amd/flang-reduction-dbg-verifier) | [llvm#211385](https://github.com/llvm/llvm-project/issues/211385), [llvm#211395](https://github.com/llvm/llvm-project/pull/211395) | — | fix PR open |
+| [runtimes-fortran-modules-triple](amd/runtimes-fortran-modules-triple) | [llvm#211137](https://github.com/llvm/llvm-project/pull/211137) | — | PR open; review asks to relocate the file |
+| [flang-reduction-dbg-verifier](amd/flang-reduction-dbg-verifier) | [llvm#211385](https://github.com/llvm/llvm-project/issues/211385), [llvm#211395](https://github.com/llvm/llvm-project/pull/211395) | — | fix PR open, narrowed; earlier fix [llvm#147950](https://github.com/llvm/llvm-project/pull/147950) was reverted |
 | [openmpopt-spmd-assert](amd/openmpopt-spmd-assert) | [llvm#211423](https://github.com/llvm/llvm-project/issues/211423) | — | open; assertions builds only |
 | [flang-linear-target-crash](amd/flang-linear-target-crash) | [llvm#211429](https://github.com/llvm/llvm-project/issues/211429) | — | open; device-only segfault |
 | [flang-allocate-clause-crash](amd/flang-allocate-clause-crash) | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) | — | open; **not offload-specific** |
@@ -26,7 +26,7 @@ its own README with the full analysis; this page is only an index.
 | [flang-slice-assign-scratch-spill](amd/flang-slice-assign-scratch-spill) | — | — | fixed in AFAR 23.2.0 |
 | [declare-target-static-tu](amd/declare-target-static-tu), [declare-target-roulette](amd/declare-target-roulette) | [llvm#203711](https://github.com/llvm/llvm-project/issues/203711) | [ROCm#2890](https://github.com/ROCm/llvm-project/issues/2890) | **not a bug**; closed |
 
-[amd/NOT-BUGS.md](amd/NOT-BUGS.md) records leads that were investigated and found not to be compiler bugs, plus one that is not yet established either way.
+[amd/NOT-BUGS.md](amd/NOT-BUGS.md) records leads that were investigated and found not to be compiler bugs, plus one that is not yet established either way. It also records the AFAR build-time findings: 23.1.0 compiles MFC 3.1x slower than 23.2.1, which link-time levers do and do not work, and why flang device ThinLTO is blocked.
 
 ### Cray — CCE Fortran, OpenACC and OpenMP offload (MI250X, Frontier)
 
