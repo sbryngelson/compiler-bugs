@@ -72,6 +72,11 @@ with **no debug info of their own**, but the builder's current debug location is
 their bodies are emitted. Their instructions therefore carry `DILocation`s scoped to the enclosing
 kernel's subprogram.
 
+There are two ways the caller's location gets in. The builder's location carries over into the
+helper at entry, and, in `emitInterWarpCopyFunction`, the two `kmpc_barrier` calls forward `Loc.DL`
+explicitly and re-establish it part way through the body. Fixing only the first leaves everything
+after the first barrier still scoped to the kernel. See the Fix section.
+
 `Verifier`'s subprogram check only applies to a function that *has* a `DISubprogram`, so the helpers
 are never flagged themselves. The mismatch becomes visible only when the inliner folds a helper into
 a function that does have one — which is why the pre-link IR is clean at every `-O` level and the
@@ -132,15 +137,41 @@ Scoped to the two device helpers this reproducer exercises (`emitShuffleAndReduc
 to `emitShuffleAndReduceFunction` is inert for the insertion point, since the sole caller already
 brackets both calls in `saveIP`/`restoreIP`.
 
-An earlier revision of the PR claimed all six helpers but in fact patched two and carried the same
-two lines duplicated four times inside `createReductionFunction`; the four global/list helpers were
-never touched. Corrected 2026-07-23.
+**Clearing the location at the top of the helper is not sufficient.** `emitInterWarpCopyFunction`
+emits two `kmpc_barrier` calls that forward the caller's location explicitly:
+
+```cpp
+createBarrier(LocationDescription(Builder.saveIP(), Loc.DL), ...)
+```
+
+`createBarrier` calls `updateToLocation`, which re-establishes that location part way through the
+helper, so every instruction after the first barrier is scoped to the kernel again. Both barriers
+have to pass `DebugLoc()` instead. On tip that is the difference between 58 `!dbg` in
+`_omp_reduction_inter_warp_copy_func` and none:
+
+```
+!27 = !DILocation(line: 28, column: 9, scope: !6)
+!6  = distinct !DISubprogram(name: "__omp_offloading_..._k__l28", ...)
+```
+
+This does **not** reproduce at `02c51adb8ff2` and does at `d1d3891077f6`, which is how it was
+missed: the first revision was verified against the older base only, and upstream CI caught it.
+Verify against tip, not just whatever the local checkout happens to be at.
+
+An earlier revision of the PR also claimed all six helpers but in fact patched two and carried the
+same two lines duplicated four times inside `createReductionFunction`; the four global/list helpers
+were never touched. Corrected 2026-07-23.
 
 Verified on gfx90a: `-O2 -g`, `-O3 -g` and `-O3 -Rpass-analysis=kernel-resource-usage` all build,
 and the reduction returns the correct value. The regression test fails without the change and passes
-with it. Test suites at `02c51adb8ff2`, with `fir-opt` and the clang and MLIR test trees built:
-check-flang 4602 passed, clang/test/OpenMP 1573 passed, mlir/test/Target/LLVMIR 404 passed,
-OpenMPIRBuilder unit tests 101 passed. No failures in any of them.
+with it. Test suites at `d1d3891077f6`, with `fir-opt` and the clang and MLIR test trees built:
+
+| suite | result |
+|---|---|
+| check-flang | 4608 passed, 11 expected failures, 0 failures |
+| clang/test/OpenMP | 1573 passed |
+| mlir/test/Target/LLVMIR | 406 passed |
+| OpenMPIRBuilder unit tests | 101 passed |
 
 ## Conformance check
 

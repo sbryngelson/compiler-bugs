@@ -85,3 +85,17 @@ for device actions, emit `ThinLTOBitcodeWriterPass` + the `EnableSplitLTOUnit` m
 produce summaries, but end-to-end ThinLTO still fails: DeviceRTL entry points are `hidden`
 (`define hidden i32 @__kmpc_target_init`) and ThinLTO cannot import hidden symbols across modules.
 Not filed.
+
+## Measurement traps hit while doing this work
+
+**Rebuild every binary under test, not just the one you think matters (2026-07-23).** An incremental
+`ninja clang` relinks `libLLVMFrontendOpenMP.a` but leaves `mlir-translate`, `fir-opt`, `bbc` and
+`tco` pointing at the previous library. Twice this produced confident-looking failures that were
+pure build skew: 5 MLIR failures blamed on a patch that actually causes none, and 4 flang CUDA/HLFIR
+failures after a branch switch. Build the specific tools the suite invokes before believing a
+result.
+
+**Verify against tip, not the local checkout's base (2026-07-23).** The first revision of the
+`llvm#211395` fix was verified at `02c51adb8ff2` and was incomplete on tip; upstream CI caught what
+local testing could not, because the relevant path does not reproduce at the older base. Fetch
+`upstream/main` and re-run before pushing a fix.
