@@ -2,10 +2,11 @@ module m
 contains
   subroutine k(a,b,n)
     real(8),intent(in)::a(*); real(8),intent(inout)::b(*); integer,intent(in)::n
-    integer::i; real(8)::t(4)
-    !$omp parallel do private(t)
+    integer::i,j
+    j=0
+    !$omp target teams distribute parallel do linear(j)
     do i=1,n
-      t=a(i); b(i)=sum(t)
+      b(i)=a(i)*real(j,8)
     end do
   end subroutine
 end module

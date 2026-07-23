@@ -1,4 +1,7 @@
-# flang/OpenMP: non-deterministic segfault lowering `allocate()` on a target construct in a module
+# flang/OpenMP: segfault lowering the `allocate` clause on a worksharing loop
+
+**Status: OPEN. Not an offload bug** — it reproduces on ordinary host compilation with no
+`target` construct anywhere; the offload framing in the first version of the report was wrong.
 
 **Status: OPEN.** Reported: [llvm/llvm-project#211430](https://github.com/llvm/llvm-project/issues/211430).
 
@@ -34,3 +37,20 @@ Legal clause: `OMP.td` lists `OMPC_Allocate` in `allowedClauses` for
 `OMP_TargetTeamsDistributeParallelDo`.
 
 Not reproduced on AFAR 23.2.1 or ROCm 7.2.0 (0/10 each).
+
+
+## Corrected scope (2026-07-22)
+
+Filed originally as a target/module/non-deterministic crash. That framing was wrong. The simplest
+reproducer has no `target` at all and is **deterministic**:
+
+| directive (identical body, host compilation) | crashes |
+|---|---|
+| `parallel do private(t) allocate(t)` (`repro_host_no_target.f90`) | **10/10** |
+| `parallel do private(t)` (`control_private_only.f90`) | 0/10 |
+| `target teams distribute parallel do private(t) allocate(t)` (`repro.f90`) | 7/10 host, 14/20 device |
+| `target teams distribute parallel do private(t)` | 0/20 |
+
+The trigger is `allocate` alongside a privatizing clause; the target construct is incidental and
+only adds the non-determinism. Reproduced on a pristine build of `02c51adb8ff2` with no local
+patches.

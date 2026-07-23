@@ -1,4 +1,4 @@
-# flang/OpenMP: segfault in `OpenMPIRBuilder::createParallel` for `linear()` on a target/simd construct
+# flang/OpenMP: segfault in `OpenMPIRBuilder::createParallel` for `linear()` on a device target construct
 
 **Status: OPEN.** Reported: [llvm/llvm-project#211429](https://github.com/llvm/llvm-project/issues/211429).
 
@@ -32,3 +32,18 @@ Legal clause: `OMP.td` lists `OMPC_Linear` in `allowedClauses` for
 
 Not reproduced on amdflang AFAR 23.2.1 (LLVM 23) or ROCm 7.2.0 (LLVM 22) — possibly a 24-cycle
 regression, not bisected.
+
+
+## Corrected scope (2026-07-22)
+
+`simd` is not required, and it is device-only:
+
+| directive | host | device |
+|---|---|---|
+| `parallel do linear(j)` | 0/10 | 0/10 |
+| `parallel do simd linear(j)` | 0/10 | 0/10 |
+| `target teams distribute parallel do linear(j)` (`repro_no_simd.f90`) | 0/10 | **10/10** |
+| `target teams distribute parallel do simd linear(j)` (`repro.f90`) | 0/10 | **10/10** |
+
+Also independent of the module wrapper — a bare subroutine crashes 10/10 — and reproduced on a
+pristine build of `02c51adb8ff2`.
