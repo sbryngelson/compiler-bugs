@@ -8,7 +8,17 @@ flang -fc1 -emit-llvm -fopenmp -fopenmp-is-target-device \
   -> Segmentation fault
 ```
 
-Deterministic, 20/20 at `02c51adb8ff2`. `-emit-hlfir` is clean 20/20, so it is in the outlining
+Deterministic, 20/20 at `02c51adb8ff2`. Isolated with an identical module and body:
+
+| clause | body | crashes |
+|---|---|---|
+| `linear(j)` | `j = j + 1; ...` (`repro.f90`) | 10/10 |
+| *(none)* | same | 0/10 |
+| `linear(j)` | `j` never modified (`repro_readonly_j.f90`) | **10/10** |
+| `private(j)` | `j = j + 1; ...` (`control_private_j.f90`) | 0/10 |
+
+The read-only row matters: the crash does not depend on assigning to the `linear` variable, so it is
+not an argument about whether that assignment is conforming. `-emit-hlfir` is clean 20/20, so it is in the outlining
 path rather than the frontend:
 
 ```

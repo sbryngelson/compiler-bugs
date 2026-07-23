@@ -10,13 +10,18 @@ flang -fc1 -emit-hlfir -fopenmp -fopenmp-is-target-device \
 
 **Not deterministic**, which is the notable part. Same input, same command, at `02c51adb8ff2`:
 
-| file | crashes |
-|---|---|
-| `repro.f90` — subroutine in a module | 14/20, and 8/10 on a repeat |
-| `nocrash_bare_subroutine.f90` — identical body, no module | 0/20 |
-| `control_no_allocate.f90` — same module, no `allocate` clause | 0/20 |
+Identical body throughout, only the clause changed:
 
-The control rules out the environment (machine idle, 470 GB free). A varying rate on a fixed input
+| clause | file | crashes |
+|---|---|---|
+| `private(t) allocate(t)` | `repro.f90` | 16/20 |
+| `private(t)` | `control_private_only.f90` | **0/20** |
+| `allocate(t)` alone | — | 20/20 (deterministic; that form is likely invalid OpenMP) |
+| `private(t) allocate(t)`, bare subroutine | `nocrash_bare_subroutine.f90` | 0/20 |
+
+The first control published was measured against a module with a *different* loop body, so it
+isolated more than the clause; the table above is the corrected version. Machine idle, 470 GB free,
+so not environmental. A varying rate on a fixed input
 points at a use-after-free or uninitialized read rather than a null dereference; an ASAN build should
 pin it down. One captured stack:
 
