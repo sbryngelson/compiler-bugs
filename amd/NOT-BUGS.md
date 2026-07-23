@@ -136,3 +136,26 @@ Two lessons. First, `git merge-base --is-ancestor HEAD^ origin/main` costs nothi
 before every push; a bad base produces failures nowhere near the change. Second, proving a failure
 is not your fault is not the same as diagnosing it, and "unrelated/flaky" is the most comfortable
 wrong answer available — prefer the cheap corrective action that produces a decisive signal.
+
+**`lldb-api` failures in LLVM premerge are noise, and a same-commit re-run proves it (2026-07-23).**
+Two PRs that touch no lldb code both went red on lldb:
+
+| PR | files changed | platform | failing test |
+|---|---|---|---|
+| `llvm#211287` | `OpenMPOpt.cpp`, one `.ll` test | Linux AArch64 | `functionalities/thread/concurrent_events/TestConcurrentSignalWatch.py` |
+| `llvm#211566` | `OMPIRBuilder.cpp`, one `.mlir` test | Linux x64 | `python_api/run_locker/TestRunLocker.py` |
+| `llvm#211566`, **re-run of the same job on the same commit** | unchanged | Linux x64 | `functionalities/gdb_remote_client/TestGdbClientModuleLoad.py` |
+
+The last row is the one that settles it. Run `30015668667`, job `89234886343` re-run as
+`89260689854` at 16:31 on identical source, and a *different* lldb test failed. Nothing
+commit-dependent can behave that way, so no property of either patch is implicated.
+
+The three tests are a signal/watchpoint race, a run-locker, and a gdb-remote module load: all
+process-control or threading, the parts of lldb most exposed to host timing.
+
+Practical rule: a red `Build and Test <platform>` whose only failure is under `lldb-api`, on a PR
+touching neither lldb nor codegen for the host triple, is not evidence against the patch. Confirm by
+pulling the failing test name out of the premerge artifacts rather than trusting the job status,
+since the job name says nothing about which suite failed. `.ci` uploads
+`test-results.*.xml`; extracting `<failure>` entries from them names the test in seconds and
+does not require waiting for the run to finish, which is when `gh run view --log` starts working.
