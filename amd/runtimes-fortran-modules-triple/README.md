@@ -107,7 +107,8 @@ target. The bug is confined to the 3.24–3.27 range (below 3.24 the force-compi
 `runtimes` requires CMake 3.20, so that range is real, but the original report did not state the
 limit and all the original testing was on 3.25.2.
 
-Also noted, not fixed by the patch: on CMake 3.31 the same configuration fails earlier at
-`CMakeTestFortranCompiler`, because CMake passes `--target=amdgcn-amd-amdhsa` to a link check that
-cannot succeed. The probe is only reached if that check is bypassed.
+A `CMakeTestFortranCompiler` failure seen on CMake 3.31 was **an artifact of configuring
+`runtimes/` standalone** with `CMAKE_Fortran_COMPILER_TARGET` set by hand. The recommended
+`offload/cmake/caches/FlangOffload.cmake` configures cleanly from the top level on both 3.25.2 and
+3.31.6, so it is not a real defect. Recorded here so it is not re-derived.
 
