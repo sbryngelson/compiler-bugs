@@ -94,3 +94,20 @@ CMake-configuration test infrastructure and this is configure-time logic with no
 CI green, no approvals. @ldionne asked whether `config-Fortran.cmake` could move out of
 `runtimes/cmake` altogether, since libc++ is notified on all traffic there. That is orthogonal to
 this fix and @Meinersbur's call — the PR is parked on the placement question, not on the change.
+
+## Applicability: CMake < 3.28 only (2026-07-22 re-audit)
+
+| CMake | unpatched | patched |
+|---|---|---|
+| 3.25.2 | `Fortran support enabled using compiler's own modules` — the bug | `disabled: Not passing smoke check` |
+| 3.31.6 | `disabled: Not passing smoke check` — already correct | same |
+
+CMake 3.28+ passes `--target=` to Flang itself, so the `try_compile()` probe already tests the right
+target. The bug is confined to the 3.24–3.27 range (below 3.24 the force-compiler path is used).
+`runtimes` requires CMake 3.20, so that range is real, but the original report did not state the
+limit and all the original testing was on 3.25.2.
+
+Also noted, not fixed by the patch: on CMake 3.31 the same configuration fails earlier at
+`CMakeTestFortranCompiler`, because CMake passes `--target=amdgcn-amd-amdhsa` to a link check that
+cannot succeed. The probe is only reached if that check is bypassed.
+
