@@ -18,6 +18,8 @@ its own README with the full analysis; this page is only an index.
 | [runtimes-fortran-modules-triple](amd/runtimes-fortran-modules-triple) | [llvm#211137](https://github.com/llvm/llvm-project/pull/211137) | — | PR open, awaiting review |
 | [flang-reduction-dbg-verifier](amd/flang-reduction-dbg-verifier) | [llvm#211385](https://github.com/llvm/llvm-project/issues/211385), [llvm#211395](https://github.com/llvm/llvm-project/pull/211395) | — | fix PR open |
 | [openmpopt-spmd-assert](amd/openmpopt-spmd-assert) | [llvm#211423](https://github.com/llvm/llvm-project/issues/211423) | — | open; assertions builds only |
+| [flang-linear-simd-crash](amd/flang-linear-simd-crash) | [llvm#211429](https://github.com/llvm/llvm-project/issues/211429) | — | open; frontend segfault |
+| [flang-allocate-clause-crash](amd/flang-allocate-clause-crash) | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) | — | open; non-deterministic segfault |
 | [flang-lastprivate-distribute](amd/flang-lastprivate-distribute) | [llvm#211401](https://github.com/llvm/llvm-project/issues/211401) | — | open; `simd` workaround |
 | [flang-ompx-attribute](amd/flang-ompx-attribute) | [llvm#211133](https://github.com/llvm/llvm-project/issues/211133) | — | RFC, no engagement |
 | [flang-slice-assign-scratch-spill](amd/flang-slice-assign-scratch-spill) | — | — | fixed in AFAR 23.2.0 |
