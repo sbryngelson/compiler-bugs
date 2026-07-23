@@ -43,10 +43,27 @@ Upstream flang at `02c51adb8ff2` does not link the same source at all:
 **Root cause, upstream.** The `hlfir.assign` in the `omp.private` *copy* region (not the init
 region, as written below) has block arguments on both sides, so `fir::AliasAnalysis` returns
 `MayAlias`, `ArraySectionAnalyzer` returns `Unknown`, and `InlineHLFIRAssign` declines to expand it.
-The copy therefore falls back to `_FortranAAssign`. The operation already defines its two
-copy-region block arguments to be the original host variable and the memory allocated for the
-clone, so they cannot overlap; skipping the aliasing check for the assignment that writes the clone
+The copy therefore falls back to `_FortranAAssign`. The operation defines its two copy-region block
+arguments to be the original host variable (arg 0) and the memory allocated for the clone (arg 1),
+so those two cannot overlap; skipping the aliasing check for the assignment that writes the clone
 lets the existing inlining emit a plain element loop.
+
+**The predicate has to check both sides (v2, after review).** The first revision only checked that
+the LHS was copy-region argument 1. @Saieiei pointed out that a copy region's body is unrestricted,
+so an assignment whose RHS is rooted in the *clone* would also have skipped the aliasing check and
+been lowered as a non-overlapping element loop — wrong. The predicate now additionally requires the
+RHS to be provably rooted in argument 0, walking the def chain and returning false on:
+
+- reaching argument 1 (the clone),
+- any value with no defining operation,
+- any operation carrying regions, since those can capture values that are not among their operands.
+
+Anything unrecognised keeps the normal aliasing check rather than skipping it. A negative test
+(`@_QFtestEe_firstprivate`, RHS loaded from the clone) pins this: it must stay an `hlfir.assign`.
+
+The lesson generalises: "these two block arguments cannot alias" was true but was not the whole
+predicate, because it constrained only one operand of the assignment. When skipping a safety check
+based on provenance, establish provenance for *every* operand the check would have covered.
 
 Fixing this in `fir::AliasAnalysis` does not work and was tried first: classifying the clone block
 argument as `SourceKind::Allocate` describes the *descriptor*, not the data behind it, so the query
@@ -62,8 +79,10 @@ Measured on gfx90a at `02c51adb8ff2`, one-element `real(8)` array:
 | ScratchSize, device compile | 208 B/lane | 112 B/lane |
 | result on MI210 | does not link | `2.0`, correct |
 
-check-flang is clean (4602 passed, 0 failures). Both counterfactuals were verified by rebuilding
-without the patch, not inferred.
+check-flang is clean: 4602 passed at v1, 4608 passed / 11 expected failures / 0 failures at v2 on
+`d1d3891077f6`. Both counterfactuals were verified by rebuilding without the patch, not inferred.
+
+`211543-inline-firstprivate-copy.patch` tracks the current PR head (v2).
 
 The kernel still reports `Dynamic Stack: True` after the fix. That is
 [#211132](https://github.com/llvm/llvm-project/issues/211132), the un-inlined device-outlined

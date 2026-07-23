@@ -17,7 +17,7 @@ the file was placed there by @Meinersbur in
 | Where | Link / ID |
 |-------|-----------|
 | llvm/llvm-project | [#211134](https://github.com/llvm/llvm-project/issues/211134) — open |
-| Fix PR | [#211137](https://github.com/llvm/llvm-project/pull/211137) — probe the target triple in both branches |
+| Fix PR | [#211137](https://github.com/llvm/llvm-project/pull/211137) — probe the target triple; route CMake < 3.28 to `execute_process` |
 | Related | [openmp/module GPU-triple regex #211135](https://github.com/llvm/llvm-project/issues/211135) (`../openmp-module-gpu-triple/`) |
 | Source | [MFC](https://github.com/MFlowCode/MFC) |
 
@@ -27,8 +27,8 @@ the file was placed there by @Meinersbur in
 modules, but neither of its two probes passes the target triple:
 
 - the `-print-file-name=iso_c_binding.mod` query runs the driver with **no** `--target`, and
-- the `check_fortran_source_compiles()` fallback uses `try_compile()`, which does **not** inherit
-  `CMAKE_Fortran_COMPILER_TARGET`.
+- the `check_fortran_source_compiles()` fallback uses `try_compile()`, which only passes
+  `CMAKE_Fortran_COMPILER_TARGET` from CMake **3.28** on.
 
 Flang's intrinsic modules are per-target, built by flang-rt for each target. When a runtime is
 configured for a GPU target that does not have flang-rt in its runtime list, both probes test the
@@ -78,11 +78,59 @@ OpenMP offload is unbuildable".
 ## Fix
 
 [llvm/llvm-project#211137](https://github.com/llvm/llvm-project/pull/211137) passes the triple to
-both probes using `CMAKE_Fortran_COMPILE_OPTIONS_TARGET` rather than a hard-coded `--target=`, since
-that variable is `--target=` for Flang and **empty** for GNU. Hard-coding `--target=` regresses
-gfortran, which rejects the option outright and would silently lose Fortran modules for users who
-have them today. With the fix the existing graceful-degradation path is reached and modules are
-correctly disabled for the GPU triple.
+the `-print-file-name` probe using `CMAKE_Fortran_COMPILE_OPTIONS_TARGET` rather than a hard-coded
+`--target=`, since that variable is `--target=` for Flang and **empty** for GNU. Hard-coding
+`--target=` regresses gfortran, which rejects the option outright and would silently lose Fortran
+modules for users who have them today. With the fix the existing graceful-degradation path is
+reached and modules are correctly disabled for the GPU triple.
+
+### v2: the `try_compile` side cannot be fixed from here (2026-07-23)
+
+The first revision also appended the flag to `CMAKE_REQUIRED_FLAGS` so it reached `try_compile()`.
+That worked, but @Meinersbur rejected the approach and gave the reason the manual
+`set(CMAKE_Fortran_COMPILE_OPTIONS_TARGET "--target=")` does not reach `try_compile()` on its own:
+
+> `CMAKE_Fortran_COMPILE_OPTIONS_TARGET` is set at a different scope when CMake does it in
+> `CMakeFortranCompiler.cmake` vs. us doing it manually in directory scope. `try_compile` seems to
+> only consider the former global scope.
+
+So the variable cannot be overridden the way CMake sets it, and patching around that at the
+`CMAKE_REQUIRED_FLAGS` layer would also mean `--target=` is passed twice on CMake 3.28+, where CMake
+already passes it. v2 instead routes **CMake < 3.28 through the `execute_process` probe**, extending
+the pre-3.24 workaround, and drops the `try_compile` hunk entirely:
+
+```cmake
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "LLVMFlang" AND
+    (CMAKE_Fortran_COMPILER_FORCED OR CMAKE_VERSION VERSION_LESS "3.28"))
+```
+
+Below 3.24 the branch is reached via `CMAKE_Fortran_COMPILER_FORCED` (set by
+`CMAKE_FORCE_Fortran_COMPILER`); 3.24–3.27 via the version test; 3.28+ falls through to
+`try_compile`, where CMake supplies the triple itself. gfortran is unaffected at any version: it is
+not `LLVMFlang`, so it always takes `try_compile`, where `CMAKE_Fortran_COMPILE_OPTIONS_TARGET` is
+empty anyway — which was @Meinersbur's original point.
+
+Measured on a real `runtimes` configure (`CMAKE_Fortran_COMPILER_TARGET=amdgcn-amd-amdhsa`,
+`LLVM_ENABLE_RUNTIMES=openmp`; correct answer is "unavailable"):
+
+| CMake | main | PR v2 | branch taken |
+|---|---|---|---|
+| 3.25.2 | `1` wrong | `FALSE` correct | execute_process |
+| 3.26.4 | — | `FALSE` correct | execute_process |
+| 3.27.9 | `1` wrong | `FALSE` correct | execute_process |
+| 3.28.4 / 3.29.6 / 3.30.5 / 3.31.6 | empty correct | empty correct | try_compile |
+
+Host target still reports available on 3.25.2, 3.27.9 and 3.31.6. On 3.31.6 `--target=` appears
+exactly once per `try_compile` command line, confirmed from `CMakeConfigureLog.yaml`.
+
+The `execute_process` hunk is what fixes the **forced** path, which no CMake version test reaches:
+with `-DCMAKE_Fortran_COMPILER_FORCED=ON` on 3.31.6, main reports the module available (host) and
+the patch reports it unavailable. That is a simulation of the `CMAKE_FORCE_Fortran_COMPILER` case —
+no 3.20–3.23 binary was available here to test it directly.
+
+`-print-file-name` is a sound probe per target: it returns an existing absolute path for the host and
+the bare name `iso_c_binding.mod` for `amdgcn-amd-amdhsa` and `nvptx64-nvidia-cuda`, so the
+`if (EXISTS ...)` test gives the right answer without compiling anything.
 
 Verified across four configs: gfortran/flang host builds unchanged (modules ON); flang for
 `amdgcn-amd-amdhsa` and `amdgpu-amd-amdhsa` correctly OFF; amdgcn with unpatched `openmp` fails as
@@ -95,11 +143,11 @@ CMake-configuration test infrastructure and this is configure-time logic with no
 
 [MFC](https://github.com/MFlowCode/MFC) offload toolchain builds on AMD GPU systems.
 
-## Review state (2026-07-22)
+## Review state (2026-07-23)
 
-CI green, no approvals. @ldionne asked whether `config-Fortran.cmake` could move out of
-`runtimes/cmake` altogether, since libc++ is notified on all traffic there. That is orthogonal to
-this fix and @Meinersbur's call — the PR is parked on the placement question, not on the change.
+Reworked to v2 per @Meinersbur (see "v2" above) and pushed; awaiting his response. @ldionne
+separately asked whether `config-Fortran.cmake` could move out of `runtimes/cmake` altogether, since
+libc++ is notified on all traffic there. That is orthogonal to this fix and @Meinersbur's call.
 
 ## Applicability: CMake < 3.28 only (2026-07-22 re-audit)
 
@@ -112,6 +160,8 @@ CMake 3.28+ passes `--target=` to Flang itself, so the `try_compile()` probe alr
 target. The bug is confined to the 3.24–3.27 range (below 3.24 the force-compiler path is used).
 `runtimes` requires CMake 3.20, so that range is real, but the original report did not state the
 limit and all the original testing was on 3.25.2.
+
+The full seven-version sweep is in the "v2" section above and supersedes this two-row table.
 
 A `CMakeTestFortranCompiler` failure seen on CMake 3.31 was **an artifact of configuring
 `runtimes/` standalone** with `CMAKE_Fortran_COMPILER_TARGET` set by hand. The recommended

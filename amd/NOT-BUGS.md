@@ -99,3 +99,19 @@ result.
 `llvm#211395` fix was verified at `02c51adb8ff2` and was incomplete on tip; upstream CI caught what
 local testing could not, because the relevant path does not reproduce at the older base. Fetch
 `upstream/main` and re-run before pushing a fix.
+
+**A reproducer that stops crashing does not mean the bug is gone (2026-07-23).** The
+`llvm#211385` reproducer builds clean, unpatched, at `d1d3891077f6`, having failed verification at
+`119b31fd3064` and `02c51adb8ff2`. The defect is unchanged — the two reduction helpers still carry
+61 and 48 `!dbg` scoped to the kernel's subprogram. Only the downstream inlining that exposed it to
+the verifier moved. Where the bug is "wrong IR", test the IR; an end-to-end crash is a symptom whose
+absence proves nothing.
+
+**Do not `git add -A` in a tree you have been debugging in (2026-07-23).** That put a 334-line
+`cmake.log` full of machine-specific paths into `llvm#211543`, and a reviewer had to ask for its
+removal. Add files by name, and read `git show --stat` before pushing.
+
+**Check every operand a safety check would have covered (2026-07-23).** The first `llvm#211543`
+predicate skipped an aliasing check after proving only the LHS was the private clone. A reviewer
+pointed out the RHS could still be rooted in that clone. "These two values cannot alias" was true
+and still insufficient, because it constrained one operand of a two-operand op.

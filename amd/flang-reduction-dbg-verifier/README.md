@@ -2,10 +2,15 @@
 
 Target: gfx90a (MI210/MI250X). Compiler: upstream flang 24.0.0git @ `119b31fd3064`.
 
-**Status (2026-07-23): FIX POSTED, narrowed after review.** Reported:
+**Status (2026-07-23): superseded — fix is @abidh's reland
+[#211566](https://github.com/llvm/llvm-project/pull/211566).** Reported:
 [llvm/llvm-project#211385](https://github.com/llvm/llvm-project/issues/211385).
-Fix: [llvm/llvm-project#211395](https://github.com/llvm/llvm-project/pull/211395).
-Confirmed on tip `02c51adb8ff2` as well as `119b31fd3064`.
+My narrower PR [#211395](https://github.com/llvm/llvm-project/pull/211395) went green on all four
+platforms and was then **closed in favour of #211566**, which fixes all six helpers rather than two
+and carries the same barrier fix. See "Outcome" at the end.
+
+Confirmed on `119b31fd3064` and `02c51adb8ff2`. On `d1d3891077f6` the bad IR is still emitted but
+the end-to-end crash no longer fires — see "The symptom went latent".
 
 ## Bug
 
@@ -27,6 +32,8 @@ The instruction is in `..omp_par.5` (`!99`); its location's scope is `!29`, the 
 
 ## When it fires
 
+At `119b31fd3064` / `02c51adb8ff2`:
+
 | flags | result |
 |---|---|
 | `-O3` | ok |
@@ -40,6 +47,28 @@ The instruction is in `..omp_par.5` (`!99`); its location's scope is `!29`, the 
 above"; that was an untested extrapolation and is wrong.) Device-only — the same source at `-O3 -g`
 without offload compiles cleanly. The remark flag is not special — it just also runs the verifier. Without
 the verifier the invalid debug info is still emitted, only undiagnosed.
+
+**This table no longer holds at `d1d3891077f6`.** See below.
+
+## The symptom went latent (2026-07-23, tip `d1d3891077f6`)
+
+On current tip the reproducer builds **clean, unpatched**, at `-O2 -g`, `-O3 -g` and with the remark
+flag. Nothing was fixed: the defective IR is emitted exactly as before. Unpatched, in the pre-link
+device module:
+
+| helper | `!dbg` | first location resolves to |
+|---|---|---|
+| `_omp_reduction_shuffle_and_reduce_func` | 61 | `__omp_offloading_803_6075695_k__l12` |
+| `_omp_reduction_inter_warp_copy_func` | 48 | same |
+
+Both scoped to the **kernel's** subprogram, which is the bug. Something downstream stopped folding
+the helpers into a position where the verifier sees the mismatch, so the failure is latent rather
+than gone. Anything relying on the end-to-end crash as the signal will now silently pass; check the
+IR instead.
+
+Practical consequence: do not use "does the reproducer build?" as the regression test on tip. Use
+`flang/test/Integration/OpenMP/target-reduction-debug-loc.f90` or the MLIR test in #211566, both of
+which check for `!dbg` in the helper bodies directly.
 
 ## Scope
 
@@ -131,11 +160,18 @@ Clear the debug location after switching the insert point into each helper, usin
 `SetCurrentDebugLocation(DebugLoc())` is not enough: `restoreIP` does not restore the debug
 location, so the cleared location leaks out.
 
-Scoped to the two device helpers this reproducer exercises (`emitShuffleAndReduceFunction`,
-`emitInterWarpCopyFunction`) rather than all six, to stay clear of whatever broke #147950. In
-`emitInterWarpCopyFunction` the guard replaces the manual `saveIP`/`restoreIP` pair. The guard added
-to `emitShuffleAndReduceFunction` is inert for the insertion point, since the sole caller already
-brackets both calls in `saveIP`/`restoreIP`.
+**The landing fix is #211566**, @abidh's reland, which applies this to all six helpers. My #211395
+did the same thing for only the two helpers this reproducer exercises
+(`emitShuffleAndReduceFunction`, `emitInterWarpCopyFunction`), deliberately narrow to stay clear of
+whatever broke #147950. Once #147950 was shown to be relandable that caution was unnecessary, so the
+narrow PR was closed. In `emitInterWarpCopyFunction` the guard replaces the manual
+`saveIP`/`restoreIP` pair; the guard in `emitShuffleAndReduceFunction` is inert for the insertion
+point, since the sole caller already brackets both calls in `saveIP`/`restoreIP`.
+
+The same pattern already exists in-tree for the *target-outlined* function at
+`OMPIRBuilder.cpp:9061-9064` (`InsertPointGuard` + `SetCurrentDebugLocation(DebugLoc())`, with the
+comment "the debug location may still be pointing to the parent function. Reset it now"). So this is
+an established idiom in this file, not a new convention.
 
 **Clearing the location at the top of the helper is not sufficient.** `emitInterWarpCopyFunction`
 emits two `kmpc_barrier` calls that forward the caller's location explicitly:
@@ -164,14 +200,30 @@ were never touched. Corrected 2026-07-23.
 
 Verified on gfx90a: `-O2 -g`, `-O3 -g` and `-O3 -Rpass-analysis=kernel-resource-usage` all build,
 and the reduction returns the correct value. The regression test fails without the change and passes
-with it. Test suites at `d1d3891077f6`, with `fir-opt` and the clang and MLIR test trees built:
+with it.
+
+## Outcome (2026-07-23)
+
+#211395 reached full green on all four premerge platforms after the barrier fix, then was closed in
+favour of #211566. #211566 verified locally at `d1d3891077f6` — applies clean, and both
+`flang/test/Integration/OpenMP/target-reduction-debug-loc.f90` (mine) and
+`mlir/test/Target/LLVMIR/omptarget-debug-reduc-fn-loc.mlir` (his) pass against it:
 
 | suite | result |
 |---|---|
 | check-flang | 4608 passed, 11 expected failures, 0 failures |
 | clang/test/OpenMP | 1573 passed |
-| mlir/test/Target/LLVMIR | 406 passed |
-| OpenMPIRBuilder unit tests | 101 passed |
+| mlir/test/Target/LLVMIR | 407 passed |
+| LLVMFrontendTests (unit) | 1281 passed |
+
+Every binary under test was rebuilt first (`flang`, `clang`, `fir-opt`, `bbc`, `mlir-translate`,
+`mlir-opt`, `LLVMFrontendTests`) — see the stale-binary note above.
+
+The earlier count of "101" for the OpenMPIRBuilder unit tests was the OpenMPIRBuilder subset;
+`LLVMFrontendTests` in full is 1281. Both are clean; the numbers measure different things.
+
+`211566-reland-reduction-debugloc.patch` is the fix as it stands. The old
+`211395-reduction-helper-debugloc.patch` was dropped, since that PR is closed.
 
 ## Conformance check
 
