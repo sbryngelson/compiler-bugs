@@ -45,8 +45,8 @@ its own README with the full analysis; this page is only an index.
 
 Merged: [#1660](https://github.com/MFlowCode/MFC/pull/1660) (reversed-stride WENO7 workaround for
 the `nuw` miscompile), [#1588](https://github.com/MFlowCode/MFC/pull/1588) (host-capture viscosity
-loss), [#1572](https://github.com/MFlowCode/MFC/pull/1572) (Riemann hot-path decomposition).
+loss), [#1572](https://github.com/MFlowCode/MFC/pull/1572) (Riemann hot-path decomposition),
+[#1668](https://github.com/MFlowCode/MFC/pull/1668)
+(`-fopenmp-assume-no-nested-parallelism` on the AMD offload path).
 
-Open: [#1668](https://github.com/MFlowCode/MFC/pull/1668)
-(`-fopenmp-assume-no-nested-parallelism` on the AMD offload path),
-[#1628](https://github.com/MFlowCode/MFC/pull/1628).
+Open: [#1628](https://github.com/MFlowCode/MFC/pull/1628).
