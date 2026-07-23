@@ -59,3 +59,14 @@ Confirmed against the specification, not just by cross-checking clang.
 
 The `simd` workaround returns the correct value both with and without an explicit `map` of the same
 variable, so it does not rely on combining `lastprivate(t)` with `map(...:t)`.
+
+## Scope: not offload-specific
+
+The same NYI fires on host compilation with no offload flags:
+
+| directive | device | host |
+|---|---|---|
+| `target teams distribute parallel do lastprivate(t)` | NYI | **NYI** |
+| `target teams distribute parallel do private(t)` | ok | ok |
+
+So it is `lastprivate` on `distribute` in general.

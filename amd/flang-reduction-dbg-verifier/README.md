@@ -30,11 +30,14 @@ The instruction is in `..omp_par.5` (`!99`); its location's scope is `!29`, the 
 |---|---|
 | `-O3` | ok |
 | `-O0 -g` | ok |
+| `-O1 -g` | ok |
 | `-O2 -g` | **broken module** |
 | `-O3 -g` | **broken module** |
 | `-O3 -Rpass-analysis=kernel-resource-usage` | **broken module** |
 
-`-g` at `-O1`+ is enough. The remark flag is not special — it just also runs the verifier. Without
+`-O2` and above with `-g`. (An earlier version of this file and the upstream report said "-O1 and
+above"; that was an untested extrapolation and is wrong.) Device-only — the same source at `-O3 -g`
+without offload compiles cleanly. The remark flag is not special — it just also runs the verifier. Without
 the verifier the invalid debug info is still emitted, only undiagnosed.
 
 ## Scope
