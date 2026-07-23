@@ -154,7 +154,8 @@ that job configures `libcxx;libcxxabi;libunwind`, and `config-Fortran.cmake` is 
 `flang-rt`/`openmp`, so the changed file is never read there. The cause was a **stale base** — the
 branch was cut from `aace063fda01`, which is not an ancestor of `origin/main`. Rebasing onto current
 main, with the diff verified byte-identical to the pre-rebase one, turned FreeBSD green. See the
-measurement-traps entry in `../NOT-BUGS.md`. Current head is `fb93dc363923`, 13 checks green.
+measurement-traps entry in `../NOT-BUGS.md`. Current head is `fb93dc363923`; the full check matrix
+is green, including the FreeBSD libc++ job that was the phantom failure.
 
 ## Applicability: CMake < 3.28 only (2026-07-22 re-audit)
 

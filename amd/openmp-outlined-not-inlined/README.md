@@ -18,10 +18,15 @@ the loop-body callback of the `__kmpc_*_static_loop_*` entries (a direct functio
 treating it as opaque. Also removes the trigger for
 [#198621](https://github.com/llvm/llvm-project/issues/198621).
 
-The one premerge failure on #211287 is `clang-tidy/infrastructure/update-checks-list.test`, which
-fails on unmodified `main` and so fails on every open PR. Unrelated; see
-[#211393](https://github.com/llvm/llvm-project/issues/211393), fix in
-[#210574](https://github.com/llvm/llvm-project/pull/210574).
+Premerge on #211287 has failed only on unrelated tests, and never on the same one twice. An early
+run failed `clang-tidy/infrastructure/update-checks-list.test`, which fails on unmodified `main` and
+so fails on every open PR ([#211393](https://github.com/llvm/llvm-project/issues/211393), fix in
+[#210574](https://github.com/llvm/llvm-project/pull/210574)). The current run fails
+`lldb-api :: functionalities/thread/concurrent_events/TestConcurrentSignalWatch.py`, a signal/
+watchpoint race with no OpenMP in the debuggee. The PR changes `OpenMPOpt.cpp` and one `.ll` test and
+touches no lldb code, so neither is attributable to it; the lldb flakiness is documented in
+`../NOT-BUGS.md` (a same-commit re-run of #211566 failed a different lldb test each time). A note to
+that effect is posted on the PR so reviewers do not stall on the red mark.
 
 ## Tracking
 
