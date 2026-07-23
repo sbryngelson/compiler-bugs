@@ -20,6 +20,7 @@ its own README with the full analysis; this page is only an index.
 | [openmpopt-spmd-assert](amd/openmpopt-spmd-assert) | [llvm#211423](https://github.com/llvm/llvm-project/issues/211423) | — | open; assertions builds only |
 | [flang-linear-target-crash](amd/flang-linear-target-crash) | [llvm#211429](https://github.com/llvm/llvm-project/issues/211429) | — | open; device-only segfault |
 | [flang-allocate-clause-crash](amd/flang-allocate-clause-crash) | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) | — | open; **not offload-specific** |
+| [flang-defaultmap-firstprivate](amd/flang-defaultmap-firstprivate) | [llvm#211433](https://github.com/llvm/llvm-project/issues/211433) | — | open; not implemented |
 | [flang-lastprivate-distribute](amd/flang-lastprivate-distribute) | [llvm#211401](https://github.com/llvm/llvm-project/issues/211401) | — | open; `simd` workaround |
 | [flang-ompx-attribute](amd/flang-ompx-attribute) | [llvm#211133](https://github.com/llvm/llvm-project/issues/211133) | — | RFC, no engagement |
 | [flang-slice-assign-scratch-spill](amd/flang-slice-assign-scratch-spill) | — | — | fixed in AFAR 23.2.0 |
