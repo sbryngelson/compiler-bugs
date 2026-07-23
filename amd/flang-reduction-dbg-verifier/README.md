@@ -98,10 +98,26 @@ by [#150832](https://github.com/llvm/llvm-project/pull/150832) for unexplained c
 failures, and never relanded. `main` has no `SetCurrentDebugLocation(DebugLoc())` in
 `OMPIRBuilder.cpp` today, so the bug is live.
 
-Only 6 clang tests reference the two helpers here and none enable debug info, so clearing the
-location cannot move their output. The revert was more likely caused by the guards *restoring the
-insertion point* in functions that previously left it moved, which changes IR regardless of debug
-info. Not verified — clang's suite was not run.
+**The failures do not reproduce on current main (2026-07-23).** #147950 ported onto `02c51adb8ff2`
+(the only conflicts are the `ArrayRef<bool> IsByRef` signature change) is clean:
+
+| suite | result |
+|---|---|
+| clang/test/OpenMP | 1573 passed, 0 failed |
+| mlir/test/Target/LLVMIR | 404 passed, 0 regressions |
+| OpenMPIRBuilder unit tests | 101 passed |
+
+The only failure is the test #147950 itself adds, and it is syntax drift rather than correctness:
+`omp.target` now requires `kernel_type`. So the patch looks relandable once that test is updated.
+
+An earlier version of this file guessed the revert came from the added guards *restoring the
+insertion point* in functions that previously left it moved. That was wrong, and was written
+without running anything. Retracted.
+
+Also worth recording as a method note: the first attempt at the run above reported 5 MLIR failures,
+including tests unrelated to OpenMP. That was a stale `mlir-translate` — only `ninja clang` had been
+run, so the binary was linked against a different `libLLVMFrontendOpenMP`. Rebuilding every binary
+under test before measuring is not optional here.
 
 ## Fix
 
@@ -122,8 +138,9 @@ never touched. Corrected 2026-07-23.
 
 Verified on gfx90a: `-O2 -g`, `-O3 -g` and `-O3 -Rpass-analysis=kernel-resource-usage` all build,
 and the reduction returns the correct value. The regression test fails without the change and passes
-with it. flang lit at `02c51adb8ff2`: 582 passed, 2 expected failures, 8 unsupported, and one
-failure that needs `fir-opt`, which that build config does not produce.
+with it. Test suites at `02c51adb8ff2`, with `fir-opt` and the clang and MLIR test trees built:
+check-flang 4602 passed, clang/test/OpenMP 1573 passed, mlir/test/Target/LLVMIR 404 passed,
+OpenMPIRBuilder unit tests 101 passed. No failures in any of them.
 
 ## Conformance check
 

@@ -36,7 +36,42 @@ Upstream flang at `02c51adb8ff2` does not link the same source at all:
 `ld.lld: error: undefined symbol: _FortranAAssign`. Same root cause from the other side.
 
 
-## Status: OPEN — not fixed
+## Status (2026-07-23): FIX POSTED upstream
+
+[llvm/llvm-project#211543](https://github.com/llvm/llvm-project/pull/211543).
+
+**Root cause, upstream.** The `hlfir.assign` in the `omp.private` *copy* region (not the init
+region, as written below) has block arguments on both sides, so `fir::AliasAnalysis` returns
+`MayAlias`, `ArraySectionAnalyzer` returns `Unknown`, and `InlineHLFIRAssign` declines to expand it.
+The copy therefore falls back to `_FortranAAssign`. The operation already defines its two
+copy-region block arguments to be the original host variable and the memory allocated for the
+clone, so they cannot overlap; skipping the aliasing check for the assignment that writes the clone
+lets the existing inlining emit a plain element loop.
+
+Fixing this in `fir::AliasAnalysis` does not work and was tried first: classifying the clone block
+argument as `SourceKind::Allocate` describes the *descriptor*, not the data behind it, so the query
+still comes back `MayAlias`. Proving the data is fresh means reasoning from the copy region into the
+init region.
+
+Measured on gfx90a at `02c51adb8ff2`, one-element `real(8)` array:
+
+| | before | after |
+|---|---|---|
+| offload link | `undefined symbol: _FortranAAssign` | links |
+| `_FortranAAssign` in device IR | 3 (1 decl, 2 calls) | 0 |
+| ScratchSize, device compile | 208 B/lane | 112 B/lane |
+| result on MI210 | does not link | `2.0`, correct |
+
+check-flang is clean (4602 passed, 0 failures). Both counterfactuals were verified by rebuilding
+without the patch, not inferred.
+
+The kernel still reports `Dynamic Stack: True` after the fix. That is
+[#211132](https://github.com/llvm/llvm-project/issues/211132), the un-inlined device-outlined
+target region, not this.
+
+**Downstream is unverified.** The ~35 KB/lane spill and occupancy collapse below are the AFAR
+manifestation of the same runtime call. The AFAR drop cannot be rebuilt locally, so only the
+upstream half of this is measured.
 
 Still reproduces on the 2026-06-12 public ROCm nightly (`therock-dist-linux-gfx90a-7.14.0a20260612`).
 AMD's first attempted fix, [llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466),
@@ -53,6 +88,7 @@ AMD (Jonathan03ant) is now routing this to their internal team.
 |-------|-----------|
 | ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — open |
 | llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — open |
+| Fix PR | [#211543](https://github.com/llvm/llvm-project/pull/211543) — inline the firstprivate array copy |
 | Non-fix attempt | [llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466) — doesn't cover this case |
 | Source | MFC [MFlowCode/MFC#1588](https://github.com/MFlowCode/MFC/pull/1588) |
 | OLCF Helpdesk | OLCFHELP-26858 |

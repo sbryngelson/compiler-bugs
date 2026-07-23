@@ -1,0 +1,86 @@
+diff --git a/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp b/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
+index 44affd514f61..46996b216138 100644
+--- a/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
++++ b/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
+@@ -19,6 +19,7 @@
+ #include "flang/Optimizer/HLFIR/HLFIROps.h"
+ #include "flang/Optimizer/HLFIR/Passes.h"
+ #include "flang/Optimizer/OpenMP/Passes.h"
++#include "mlir/Dialect/OpenMP/OpenMPDialect.h"
+ #include "mlir/IR/PatternMatch.h"
+ #include "mlir/Pass/Pass.h"
+ #include "mlir/Support/LLVM.h"
+@@ -39,6 +40,22 @@ static llvm::cl::opt<bool> inlineAllocatableExprAssignFlag(
+                    "hlfir.expr (e.g., from hlfir.elemental)"),
+     llvm::cl::init(false));
+ 
++/// Is \p assign the copy-in of an `omp.private` copy region, writing the
++/// privatized clone? The operation defines its first copy-region block
++/// argument to be the original host variable and the second to be the memory
++/// allocated for the clone, so the two cannot overlap and the copy can be
++/// inlined without an aliasing check.
++static bool isOmpPrivateCopyInAssign(hlfir::AssignOp assign) {
++  mlir::Region *region = assign->getParentRegion();
++  auto privateOp =
++      llvm::dyn_cast_or_null<mlir::omp::PrivateClauseOp>(region->getParentOp());
++  if (!privateOp || region != &privateOp.getCopyRegion())
++    return false;
++  auto blockArg = llvm::dyn_cast<mlir::BlockArgument>(assign.getLhs());
++  return blockArg && blockArg.getOwner()->getParent() == region &&
++         blockArg.getArgNumber() == 1;
++}
++
+ namespace {
+ /// Expand hlfir.assign of array RHS to array LHS into a loop nest
+ /// of element-by-element assignments. Also handles scalar RHS broadcast
+@@ -104,7 +121,7 @@ public:
+ 
+     bool rhsNeedsTemporary = false;
+     if (rhs.isArray() && !mlir::isa<hlfir::ExprType>(rhs.getType()) &&
+-        !assign.getTemporaryLhs()) {
++        !assign.getTemporaryLhs() && !isOmpPrivateCopyInAssign(assign)) {
+       fir::AliasAnalysis aliasAnalysis;
+       mlir::AliasResult aliasRes = aliasAnalysis.alias(lhs, rhs);
+       if (!aliasRes.isNo()) {
+diff --git a/flang/test/HLFIR/inline-hlfir-assign.fir b/flang/test/HLFIR/inline-hlfir-assign.fir
+index 6cf6fcedb0af..19a7ef32fdf4 100644
+--- a/flang/test/HLFIR/inline-hlfir-assign.fir
++++ b/flang/test/HLFIR/inline-hlfir-assign.fir
+@@ -496,3 +496,37 @@ func.func @_QPtest_scalar_ref_from_lhs(%arg0: !fir.ref<!fir.array<10xf32>>) {
+ // CHECK:           }
+ // CHECK:           return
+ // CHECK:         }
++
++// The copy-in of an omp.private copy region writes the privatized clone,
++// which the operation defines to be distinct from the original host variable,
++// so it inlines even though alias analysis cannot prove it from the block
++// arguments alone.
++omp.private {type = firstprivate} @_QFtestEc_firstprivate : !fir.box<!fir.array<1xf64>> copy {
++^bb0(%arg0: !fir.ref<!fir.box<!fir.array<1xf64>>>, %arg1: !fir.ref<!fir.box<!fir.array<1xf64>>>):
++  %0 = fir.load %arg0 : !fir.ref<!fir.box<!fir.array<1xf64>>>
++  hlfir.assign %0 to %arg1 : !fir.box<!fir.array<1xf64>>, !fir.ref<!fir.box<!fir.array<1xf64>>>
++  omp.yield(%arg1 : !fir.ref<!fir.box<!fir.array<1xf64>>>)
++}
++// CHECK-LABEL:   omp.private {type = firstprivate} @_QFtestEc_firstprivate : !fir.box<!fir.array<1xf64>> copy {
++// CHECK:         ^bb0(%[[ORIG:.*]]: !fir.ref<!fir.box<!fir.array<1xf64>>>, %[[CLONE:.*]]: !fir.ref<!fir.box<!fir.array<1xf64>>>):
++// CHECK:           %[[RHS:.*]] = fir.load %[[ORIG]] : !fir.ref<!fir.box<!fir.array<1xf64>>>
++// CHECK:           %[[LHS:.*]] = fir.load %[[CLONE]] : !fir.ref<!fir.box<!fir.array<1xf64>>>
++// CHECK:           fir.do_loop
++// CHECK-NOT:       hlfir.assign %[[RHS]] to %[[CLONE]]
++// CHECK:           omp.yield(%[[CLONE]] : !fir.ref<!fir.box<!fir.array<1xf64>>>)
++// CHECK:         }
++
++// An assignment in the copy region that does not write the clone keeps its
++// aliasing check.
++omp.private {type = firstprivate} @_QFtestEd_firstprivate : !fir.box<!fir.array<1xf64>> copy {
++^bb0(%arg0: !fir.ref<!fir.box<!fir.array<1xf64>>>, %arg1: !fir.ref<!fir.box<!fir.array<1xf64>>>):
++  %0 = fir.load %arg1 : !fir.ref<!fir.box<!fir.array<1xf64>>>
++  hlfir.assign %0 to %arg0 : !fir.box<!fir.array<1xf64>>, !fir.ref<!fir.box<!fir.array<1xf64>>>
++  omp.yield(%arg1 : !fir.ref<!fir.box<!fir.array<1xf64>>>)
++}
++// CHECK-LABEL:   omp.private {type = firstprivate} @_QFtestEd_firstprivate : !fir.box<!fir.array<1xf64>> copy {
++// CHECK:         ^bb0(%[[ORIG2:.*]]: !fir.ref<!fir.box<!fir.array<1xf64>>>, %[[CLONE2:.*]]: !fir.ref<!fir.box<!fir.array<1xf64>>>):
++// CHECK:           %[[RHS2:.*]] = fir.load %[[CLONE2]] : !fir.ref<!fir.box<!fir.array<1xf64>>>
++// CHECK:           hlfir.assign %[[RHS2]] to %[[ORIG2]] : !fir.box<!fir.array<1xf64>>, !fir.ref<!fir.box<!fir.array<1xf64>>>
++// CHECK:           omp.yield(%[[CLONE2]] : !fir.ref<!fir.box<!fir.array<1xf64>>>)
++// CHECK:         }
