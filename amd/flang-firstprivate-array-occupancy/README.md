@@ -53,16 +53,25 @@ inlined loop.
 #209539 is the better-layered fix (it covers every consumer of alias analysis, not one call site),
 which is why #211543 was offered up in its favour rather than pushed.
 
-**Two loose ends, both mine to close:**
+Both of my tickets are now closed against `e949b654424b`:
 
-- [#211543](https://github.com/llvm/llvm-project/pull/211543) is still **open** and is now dead
-  code. I said on #209539 I would close it once that landed; the merge and my comment crossed
-  (@bhandarkar-pranav: "I think I hit merge just as your comment came"). Close it, pointing at
-  `e949b654424b`.
-- [#203890](https://github.com/llvm/llvm-project/issues/203890) is still **open**. #209539's
-  description names only #200922 (now closed by the merge), so GitHub never auto-closed mine. The
-  equivalence was measured and reported on the PR (byte-identical binary, table below); close
-  #203890 against `e949b654424b` citing that.
+- [#211543](https://github.com/llvm/llvm-project/pull/211543) — closed as redundant. I said on
+  #209539 I would close it once that landed; the merge and my comment crossed by ~45 min
+  (@bhandarkar-pranav: "I think I hit merge just as your comment came").
+- [#203890](https://github.com/llvm/llvm-project/issues/203890) — closed. #209539's description
+  names only #200922, so GitHub never auto-closed mine; it needed doing by hand.
+
+**#203890 was closed on the upstream half only, and the comment says so.** The link failure is
+verified fixed; the ~35 KB/lane scratch and 12% occupancy in that issue were measured on AFAR
+23.1.0/23.2.0, which cannot be rebuilt locally, so that half has never been re-measured against the
+fix. Same runtime call, so it should go with it — but that is an inference, not a measurement. It
+stays on [ROCm#2909](https://github.com/ROCm/llvm-project/issues/2909) until a drop carries
+`e949b654424b` and the occupancy trace can be re-run. If the spill survives there it is a separate
+defect and gets its own issue rather than a reopen.
+
+**Not recorded at the time:** which #209539 revision the equivalence measurement used. The last PR
+commit was `c1fc137f5425` (2026-07-20) and the measurement was 2026-07-24, so it was the final head,
+but the SHA was never written down the way `2a8677d01575` was for #211543.
 
 Note: an earlier alias-analysis attempt of mine failed by classifying the clone as
 `SourceKind::Allocate` (describes the descriptor, not the data). #209539 succeeds by special-casing
@@ -192,11 +201,11 @@ AMD (Jonathan03ant) is now routing this to their internal team.
 
 | Where | Link / ID |
 |-------|-----------|
-| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — open; awaiting an AFAR drop with `e949b654424b` |
-| llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — open, **fixed by `e949b654424b`; close it** |
+| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — **open**; the only thing still live. Awaiting an AFAR drop with `e949b654424b`, then re-run the occupancy trace |
+| llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — closed 2026-07-24 against `e949b654424b`, scoped to the upstream link failure |
 | llvm/llvm-project | [#200922](https://github.com/llvm/llvm-project/issues/200922) — closed by the merge (the compile-time half, @bhandarkar-pranav's report) |
 | **Fix (landed)** | [#209539](https://github.com/llvm/llvm-project/pull/209539) → [`e949b654424b`](https://github.com/llvm/llvm-project/commit/e949b654424beda81ab4db154a72b904c8b32245), merged 2026-07-24 — `fir::AliasAnalysis` returns `NoAlias` for the copy-region pair |
-| Fix PR (mine, superseded) | [#211543](https://github.com/llvm/llvm-project/pull/211543) — inline the copy in `InlineHLFIRAssign`; redundant, **still open, close it** |
+| Fix PR (mine, superseded) | [#211543](https://github.com/llvm/llvm-project/pull/211543) — closed 2026-07-24 as redundant with `e949b654424b` |
 | Non-fix attempt | [llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466) — doesn't cover this case |
 | Source | MFC [MFlowCode/MFC#1588](https://github.com/MFlowCode/MFC/pull/1588) |
 | OLCF Helpdesk | OLCFHELP-26858 |
