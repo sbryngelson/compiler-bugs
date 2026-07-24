@@ -36,16 +36,33 @@ Upstream flang at `02c51adb8ff2` does not link the same source at all:
 `ld.lld: error: undefined symbol: _FortranAAssign`. Same root cause from the other side.
 
 
-## Status (2026-07-24): FIX POSTED, likely superseded by #209539
+## Status (2026-07-24): FIXED UPSTREAM by #209539
 
-[llvm/llvm-project#211543](https://github.com/llvm/llvm-project/pull/211543) is open and green, but
-[#209539](https://github.com/llvm/llvm-project/pull/209539) (bhandarkar-pranav) fixes the same thing
-one layer down, in `fir::AliasAnalysis::alias`: it returns `NoAlias` for the copy-region mold/private
-pair and `MayAlias` for POINTER. With that, `InlineHLFIRAssign`'s existing `aliasRes.isNo()` path
-inlines the copy on its own and #211543's special case is redundant. #209539 is the better-layered
-fix (it covers every consumer of alias analysis, not one call site) and it is the approach to prefer;
-#211543 offered to close in its favour, kept hardened as a fallback in case #209539 stalls. Reviewer
-on #211543 is @tblah.
+[#209539](https://github.com/llvm/llvm-project/pull/209539) (@bhandarkar-pranav) **merged
+2026-07-24 18:56 UTC** as [`e949b654424b`](https://github.com/llvm/llvm-project/commit/e949b654424beda81ab4db154a72b904c8b32245)
+on `main`. It fixes this one layer below my patch, in `fir::AliasAnalysis::alias`: it returns
+`NoAlias` for the copy-region mold/private pair and `MayAlias` for POINTER. With that,
+`InlineHLFIRAssign`'s existing `aliasRes.isNo()` path inlines the copy on its own and #211543's
+special case is redundant. What landed is 65 lines in
+`flang/lib/Optimizer/Analysis/AliasAnalysis.cpp`, two new alias-analysis tests
+(`alias-analysis-omp-private-copy-region.mlir`, `alias-analysis-omp-private-pointer.mlir` — the
+POINTER guard @tblah asked for is in), and a 50-line CHECK update to
+`Integration/OpenMP/parallel-private-reduction-worstcase.f90` where the runtime call is now an
+inlined loop.
+
+#209539 is the better-layered fix (it covers every consumer of alias analysis, not one call site),
+which is why #211543 was offered up in its favour rather than pushed.
+
+**Two loose ends, both mine to close:**
+
+- [#211543](https://github.com/llvm/llvm-project/pull/211543) is still **open** and is now dead
+  code. I said on #209539 I would close it once that landed; the merge and my comment crossed
+  (@bhandarkar-pranav: "I think I hit merge just as your comment came"). Close it, pointing at
+  `e949b654424b`.
+- [#203890](https://github.com/llvm/llvm-project/issues/203890) is still **open**. #209539's
+  description names only #200922 (now closed by the merge), so GitHub never auto-closed mine. The
+  equivalence was measured and reported on the PR (byte-identical binary, table below); close
+  #203890 against `e949b654424b` citing that.
 
 Note: an earlier alias-analysis attempt of mine failed by classifying the clone as
 `SourceKind::Allocate` (describes the descriptor, not the data). #209539 succeeds by special-casing
@@ -175,10 +192,11 @@ AMD (Jonathan03ant) is now routing this to their internal team.
 
 | Where | Link / ID |
 |-------|-----------|
-| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — open |
-| llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — open |
-| Fix PR (mine) | [#211543](https://github.com/llvm/llvm-project/pull/211543) — inline the firstprivate array copy in `InlineHLFIRAssign` |
-| Fix PR (preferred) | [#209539](https://github.com/llvm/llvm-project/pull/209539) — fix `fir::AliasAnalysis` for the copy-region pair; supersedes #211543 |
+| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — open; awaiting an AFAR drop with `e949b654424b` |
+| llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — open, **fixed by `e949b654424b`; close it** |
+| llvm/llvm-project | [#200922](https://github.com/llvm/llvm-project/issues/200922) — closed by the merge (the compile-time half, @bhandarkar-pranav's report) |
+| **Fix (landed)** | [#209539](https://github.com/llvm/llvm-project/pull/209539) → [`e949b654424b`](https://github.com/llvm/llvm-project/commit/e949b654424beda81ab4db154a72b904c8b32245), merged 2026-07-24 — `fir::AliasAnalysis` returns `NoAlias` for the copy-region pair |
+| Fix PR (mine, superseded) | [#211543](https://github.com/llvm/llvm-project/pull/211543) — inline the copy in `InlineHLFIRAssign`; redundant, **still open, close it** |
 | Non-fix attempt | [llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466) — doesn't cover this case |
 | Source | MFC [MFlowCode/MFC#1588](https://github.com/MFlowCode/MFC/pull/1588) |
 | OLCF Helpdesk | OLCFHELP-26858 |
