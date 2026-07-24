@@ -2,12 +2,14 @@
 
 Target: gfx90a (MI210/MI250X). Compiler: upstream flang 24.0.0git @ `119b31fd3064`.
 
-**Status (2026-07-23): superseded — fix is @abidh's reland
-[#211566](https://github.com/llvm/llvm-project/pull/211566).** Reported:
-[llvm/llvm-project#211385](https://github.com/llvm/llvm-project/issues/211385).
-My narrower PR [#211395](https://github.com/llvm/llvm-project/pull/211395) went green on all four
-platforms and was then **closed in favour of #211566**, which fixes all six helpers rather than two
-and carries the same barrier fix. See "Outcome" at the end.
+**Status (2026-07-24): FIXED — @abidh's reland
+[#211566](https://github.com/llvm/llvm-project/pull/211566) merged to `main`
+(`3d69ace09ec4`, 2026-07-24), and the report
+[llvm/llvm-project#211385](https://github.com/llvm/llvm-project/issues/211385) is closed as
+completed.** #211566 fixes all six reduction helpers and clears the debug location on both
+helper-internal barriers. My narrower PR [#211395](https://github.com/llvm/llvm-project/pull/211395)
+went green on all four platforms but was **closed in favour of #211566**, which is the superset. See
+"Outcome" at the end.
 
 Confirmed on `119b31fd3064` and `02c51adb8ff2`. On `d1d3891077f6` the bad IR is still emitted but
 the end-to-end crash no longer fires — see "The symptom went latent".
@@ -202,10 +204,13 @@ Verified on gfx90a: `-O2 -g`, `-O3 -g` and `-O3 -Rpass-analysis=kernel-resource-
 and the reduction returns the correct value. The regression test fails without the change and passes
 with it.
 
-## Outcome (2026-07-23)
+## Outcome (2026-07-24)
+
+**#211566 merged to `main` as `3d69ace09ec4` on 2026-07-24; #211385 closed as completed.**
 
 #211395 reached full green on all four premerge platforms after the barrier fix, then was closed in
-favour of #211566. #211566 verified locally at `d1d3891077f6` — applies clean, and both
+favour of #211566. #211566 was verified locally at `d1d3891077f6` before merge — applies clean, and
+both
 `flang/test/Integration/OpenMP/target-reduction-debug-loc.f90` (mine) and
 `mlir/test/Target/LLVMIR/omptarget-debug-reduc-fn-loc.mlir` (his) pass against it:
 
