@@ -130,6 +130,28 @@ than v2 only because an unrelated test file from `llvm#211395` was removed from 
 Every counterfactual, including the v4 POINTER guard, was verified by rebuilding without the check,
 not inferred.
 
+### #209539 and #211543 are equivalent in effect (2026-07-24)
+
+Built and measured three ways at `d1d3891077f6`, gfx90a, `-O3`, using
+`firstprivate_one_element.f90`:
+
+| build | offload link | binary |
+|---|---|---|
+| baseline, no patch | `ld.lld: error: undefined symbol: _FortranAAssign` | fails |
+| #209539 alone | links | 1241304 bytes |
+| #211543 (v4) alone | links | 1241304 bytes |
+
+Byte-identical output, so for this case the two fixes are interchangeable and #211543 adds nothing
+over #209539. It also establishes that #209539 closes **#203890** as well as the #200922 it names;
+that was reported on #209539, since its description covers only the compile-time regression.
+
+**Measurement error worth recording.** The recent v3/v4 checks used a scratch file
+(`fp.f90`, a `firstprivate` + `reduction` kernel) and reported `_FortranAAssign` count 0 as
+confirmation. The baseline emits 0 for that file too, so the check never discriminated and those
+particular verifications were vacuous. The patches are still correct, as the table above shows, but
+it was proved by a test that could not fail rather than one that could. Use
+`firstprivate_one_element.f90`, where the counterfactual is an outright link failure.
+
 `211543-inline-firstprivate-copy.patch` tracks the current PR head (v4, `2a8677d01575`).
 
 The kernel still reports `Dynamic Stack: True` after the fix. That is

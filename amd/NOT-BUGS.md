@@ -159,3 +159,14 @@ pulling the failing test name out of the premerge artifacts rather than trusting
 since the job name says nothing about which suite failed. `.ci` uploads
 `test-results.*.xml`; extracting `<failure>` entries from them names the test in seconds and
 does not require waiting for the run to finish, which is when `gh run view --log` starts working.
+
+**A verification that cannot fail is not a verification (2026-07-24).** While iterating on
+`llvm#211543` I repeatedly confirmed the fix with a scratch reproducer, checking that the device IR
+contained no `_FortranAAssign`, and got 0 every time. The baseline emits 0 for that file as well:
+the check never discriminated, so several rounds of "verified end to end" were vacuous. The patch
+was correct, but the evidence offered for it was not evidence.
+
+The real reproducer fails outright without the fix (`ld.lld: error: undefined symbol:
+_FortranAAssign`), which is what a counterfactual should look like. Before trusting a check, run it
+against the unpatched build once and confirm it actually fails; a green result from a test that
+cannot go red says nothing.
