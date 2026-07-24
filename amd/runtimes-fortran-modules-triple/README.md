@@ -143,11 +143,18 @@ CMake-configuration test infrastructure and this is configure-time logic with no
 
 [MFC](https://github.com/MFlowCode/MFC) offload toolchain builds on AMD GPU systems.
 
-## Review state (2026-07-23)
+## Review state (2026-07-24): APPROVED, needs landing
 
-Reworked to v2 per @Meinersbur (see "v2" above) and pushed; awaiting his response. @ldionne
-separately asked whether `config-Fortran.cmake` could move out of `runtimes/cmake` altogether, since
-libc++ is notified on all traffic there. That is orthogonal to this fix and @Meinersbur's call.
+Reworked to v2 per @Meinersbur (see "v2" above) and pushed. He **approved it on 2026-07-23 21:51
+UTC** at head `fb93dc363923`, after an earlier round of comments the same day. Review timeline:
+@ldionne commented 07-22, @Meinersbur commented 07-23 13:47, @Meinersbur approved 07-23 21:51.
+
+So this is approved and green with nothing outstanding — it just has not been merged. **Ask
+@Meinersbur to land it**; nothing else is blocking.
+
+@ldionne separately asked whether `config-Fortran.cmake` could move out of `runtimes/cmake`
+altogether, since libc++ is notified on all traffic there. That is orthogonal to this fix and
+@Meinersbur's call; it did not gate the approval.
 
 The v2 push initially failed `buildkite/libcxx-ci/freebsd-15-dot-1-amd64`, which looked impossible:
 that job configures `libcxx;libcxxabi;libunwind`, and `config-Fortran.cmake` is only included for
