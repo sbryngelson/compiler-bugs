@@ -130,7 +130,7 @@ than v2 only because an unrelated test file from `llvm#211395` was removed from 
 Every counterfactual, including the v4 POINTER guard, was verified by rebuilding without the check,
 not inferred.
 
-`211543-inline-firstprivate-copy.patch` tracks the current PR head (v4, `01ed42af42ce`).
+`211543-inline-firstprivate-copy.patch` tracks the current PR head (v4, `2a8677d01575`).
 
 The kernel still reports `Dynamic Stack: True` after the fix. That is
 [#211132](https://github.com/llvm/llvm-project/issues/211132), the un-inlined device-outlined

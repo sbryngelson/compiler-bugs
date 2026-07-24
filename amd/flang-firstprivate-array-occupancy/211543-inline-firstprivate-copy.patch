@@ -1,5 +1,5 @@
 diff --git a/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp b/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
-index 44affd514f613..d0a7a0d6635f9 100644
+index 44affd514f613..7e26eb808a60e 100644
 --- a/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
 +++ b/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
 @@ -19,6 +19,7 @@
@@ -10,7 +10,7 @@ index 44affd514f613..d0a7a0d6635f9 100644
  #include "mlir/IR/PatternMatch.h"
  #include "mlir/Pass/Pass.h"
  #include "mlir/Support/LLVM.h"
-@@ -39,6 +40,55 @@ static llvm::cl::opt<bool> inlineAllocatableExprAssignFlag(
+@@ -39,6 +40,57 @@ static llvm::cl::opt<bool> inlineAllocatableExprAssignFlag(
                     "hlfir.expr (e.g., from hlfir.elemental)"),
      llvm::cl::init(false));
  
@@ -38,7 +38,8 @@ index 44affd514f613..d0a7a0d6635f9 100644
 +  if (assign->getParentRegion() != &copyRegion)
 +    return false;
 +
-+  // Only the entry block: another block's arguments are not the mold/clone pair.
++  // Only the entry block: another block's arguments are not the mold/clone
++  // pair.
 +  mlir::Block &entry = copyRegion.front();
 +  if (assign->getBlock() != &entry || entry.getNumArguments() != 2)
 +    return false;
@@ -49,7 +50,8 @@ index 44affd514f613..d0a7a0d6635f9 100644
 +
 +  // A POINTER firstprivate copies the association, so the data aliases.
 +  auto isPointer = [](mlir::Value v) -> bool {
-+    auto boxTy = mlir::dyn_cast<fir::BaseBoxType>(fir::unwrapRefType(v.getType()));
++    auto boxTy =
++        mlir::dyn_cast<fir::BaseBoxType>(fir::unwrapRefType(v.getType()));
 +    return boxTy && boxTy.isPointer();
 +  };
 +  if (isPointer(mold))
@@ -66,7 +68,7 @@ index 44affd514f613..d0a7a0d6635f9 100644
  namespace {
  /// Expand hlfir.assign of array RHS to array LHS into a loop nest
  /// of element-by-element assignments. Also handles scalar RHS broadcast
-@@ -104,7 +154,7 @@ class InlineHLFIRAssignConversion
+@@ -104,7 +156,7 @@ class InlineHLFIRAssignConversion
  
      bool rhsNeedsTemporary = false;
      if (rhs.isArray() && !mlir::isa<hlfir::ExprType>(rhs.getType()) &&
