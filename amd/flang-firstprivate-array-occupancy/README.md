@@ -36,9 +36,21 @@ Upstream flang at `02c51adb8ff2` does not link the same source at all:
 `ld.lld: error: undefined symbol: _FortranAAssign`. Same root cause from the other side.
 
 
-## Status (2026-07-23): FIX POSTED upstream
+## Status (2026-07-24): FIX POSTED, likely superseded by #209539
 
-[llvm/llvm-project#211543](https://github.com/llvm/llvm-project/pull/211543).
+[llvm/llvm-project#211543](https://github.com/llvm/llvm-project/pull/211543) is open and green, but
+[#209539](https://github.com/llvm/llvm-project/pull/209539) (bhandarkar-pranav) fixes the same thing
+one layer down, in `fir::AliasAnalysis::alias`: it returns `NoAlias` for the copy-region mold/private
+pair and `MayAlias` for POINTER. With that, `InlineHLFIRAssign`'s existing `aliasRes.isNo()` path
+inlines the copy on its own and #211543's special case is redundant. #209539 is the better-layered
+fix (it covers every consumer of alias analysis, not one call site) and it is the approach to prefer;
+#211543 offered to close in its favour, kept hardened as a fallback in case #209539 stalls. Reviewer
+on #211543 is @tblah.
+
+Note: an earlier alias-analysis attempt of mine failed by classifying the clone as
+`SourceKind::Allocate` (describes the descriptor, not the data). #209539 succeeds by special-casing
+the block-arg pair directly instead, and additionally gets the POINTER case right, which the
+`SourceKind` route would not have.
 
 **Root cause, upstream.** The `hlfir.assign` in the `omp.private` *copy* region (not the init
 region, as written below) has block arguments on both sides, so `fir::AliasAnalysis` returns
@@ -83,15 +95,25 @@ Note on `@_QFtestEg`: v2 accepted it, but it happens to be a self-assignment of 
 inlining it would have been benign in that instance. It demonstrates a predicate defect, not a
 miscompile. `@_QFtestEf` is the one with real miscompile potential.
 
+*v4* (after @tblah's review) adds a POINTER guard and switches to the named accessors
+`getCopyMoldArg()` / `getCopyPrivateArg()`. The POINTER point is a genuine semantic subtlety: a
+POINTER firstprivate copies the pointer *association*, not the data, so the mold and clone
+descriptors designate the same storage and the copy aliases. #209539 handles this by returning
+`MayAlias`; v3 did not handle it at all. It is not reachable today because a POINTER copy region
+lowers to `fir.load` + `fir.store`, not `hlfir.assign` (confirmed by dumping the IR), so this pass
+never sees it, but the guard keeps it correct if that changes. A fifth negative test `@_QFtestEp`
+(POINTER-typed copy region) pins it: it fails without the guard and passes with it.
+
 The lesson generalises twice over. "These two block arguments cannot alias" was true but was not the
 whole predicate, because it constrained only one operand of the assignment. And when a safety check
 is being skipped on the basis of a pattern, matching the exact pattern the producer emits beats
 reasoning about the general case — the general case is where the reviewer keeps finding holes.
 
-Fixing this in `fir::AliasAnalysis` does not work and was tried first: classifying the clone block
-argument as `SourceKind::Allocate` describes the *descriptor*, not the data behind it, so the query
-still comes back `MayAlias`. Proving the data is fresh means reasoning from the copy region into the
-init region.
+Fixing this in `fir::AliasAnalysis` *via `SourceKind`* does not work and was tried first: classifying
+the clone block argument as `SourceKind::Allocate` describes the *descriptor*, not the data behind
+it, so the query still comes back `MayAlias`. A different alias-analysis route does work, and is what
+#209539 does: special-case the copy-region mold/private block-arg pair directly (returning `NoAlias`,
+or `MayAlias` for POINTER) rather than going through `SourceKind`.
 
 Measured on gfx90a at `02c51adb8ff2`, one-element `real(8)` array:
 
@@ -103,11 +125,12 @@ Measured on gfx90a at `02c51adb8ff2`, one-element `real(8)` array:
 | result on MI210 | does not link | `2.0`, correct |
 
 check-flang is clean at every revision: 4602 passed at v1; 4608 passed at v2; 4607 passed / 11
-expected failures / 0 failures at v3 on `d1d3891077f6`. (v3's discovered count is one lower only
-because an unrelated test file from `llvm#211395` was removed from the working tree.) Both
-counterfactuals were verified by rebuilding without the patch, not inferred.
+expected failures / 0 failures at v3 and v4 on `d1d3891077f6`. (The discovered count is one lower
+than v2 only because an unrelated test file from `llvm#211395` was removed from the working tree.)
+Every counterfactual, including the v4 POINTER guard, was verified by rebuilding without the check,
+not inferred.
 
-`211543-inline-firstprivate-copy.patch` tracks the current PR head (v3, `630f75a70f18`).
+`211543-inline-firstprivate-copy.patch` tracks the current PR head (v4, `01ed42af42ce`).
 
 The kernel still reports `Dynamic Stack: True` after the fix. That is
 [#211132](https://github.com/llvm/llvm-project/issues/211132), the un-inlined device-outlined
@@ -132,7 +155,8 @@ AMD (Jonathan03ant) is now routing this to their internal team.
 |-------|-----------|
 | ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — open |
 | llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — open |
-| Fix PR | [#211543](https://github.com/llvm/llvm-project/pull/211543) — inline the firstprivate array copy |
+| Fix PR (mine) | [#211543](https://github.com/llvm/llvm-project/pull/211543) — inline the firstprivate array copy in `InlineHLFIRAssign` |
+| Fix PR (preferred) | [#209539](https://github.com/llvm/llvm-project/pull/209539) — fix `fir::AliasAnalysis` for the copy-region pair; supersedes #211543 |
 | Non-fix attempt | [llvm/llvm-project#204466](https://github.com/llvm/llvm-project/pull/204466) — doesn't cover this case |
 | Source | MFC [MFlowCode/MFC#1588](https://github.com/MFlowCode/MFC/pull/1588) |
 | OLCF Helpdesk | OLCFHELP-26858 |

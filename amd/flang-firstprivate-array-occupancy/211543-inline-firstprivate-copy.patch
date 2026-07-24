@@ -1,5 +1,5 @@
 diff --git a/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp b/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
-index 44affd514f613..c82e21a42dd44 100644
+index 44affd514f613..d0a7a0d6635f9 100644
 --- a/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
 +++ b/flang/lib/Optimizer/HLFIR/Transforms/InlineHLFIRAssign.cpp
 @@ -19,6 +19,7 @@
@@ -14,28 +14,21 @@ index 44affd514f613..c82e21a42dd44 100644
                     "hlfir.expr (e.g., from hlfir.elemental)"),
      llvm::cl::init(false));
  
-+/// Is \p assign the copy-in of an `omp.private` copy region, writing the
-+/// privatized clone from the original host variable?
++/// Is \p assign an `omp.private` copy region copying the mold to the clone?
 +///
-+/// `omp.private` defines the copy region's first *entry-block* argument to be
-+/// the original host variable and the second to be the memory allocated for the
-+/// clone, so those two cannot overlap and the copy needs no aliasing check.
-+///
-+/// The body of a copy region is otherwise unrestricted: it may have several
-+/// blocks, and arbitrary operations may compute the operands of an assignment.
-+/// So rather than reason about provenance in general, this matches only the
-+/// canonical shape lowering emits for the copy-in,
++/// The copy region's entry-block arguments are the mold and the freshly
++/// allocated clone, which cannot overlap, so the copy needs no aliasing check.
++/// The body is unrestricted, so match only the shape lowering emits:
 +///
 +/// \code
-+///   ^bb0(%orig, %clone):
-+///     %0 = fir.load %orig          // boxed privatizer only
++///   ^bb0(%mold, %clone):
++///     %0 = fir.load %mold          // boxed privatizer only
 +///     hlfir.assign %0 to %clone
 +/// \endcode
 +///
-+/// and requires the assignment to be in the entry block itself. Anything else,
-+/// including an RHS computed by a call that might return unrelated memory,
-+/// keeps the usual aliasing check; being conservative here costs only the
-+/// inlining.
++/// A POINTER privatizer is excluded: firstprivate copies the association, so
++/// mold and clone share data and the copy aliases. It is lowered with fir.store
++/// today, not hlfir.assign, so the guard only covers a future codegen change.
 +static bool isOmpPrivateCopyInAssign(hlfir::AssignOp assign) {
 +  auto privateOp = llvm::dyn_cast_or_null<mlir::omp::PrivateClauseOp>(
 +      assign->getParentRegion()->getParentOp());
@@ -45,22 +38,29 @@ index 44affd514f613..c82e21a42dd44 100644
 +  if (assign->getParentRegion() != &copyRegion)
 +    return false;
 +
-+  // Only the entry block: the arguments of any other block are unrelated to
-+  // the original/clone pair, even where they happen to have the same numbers.
++  // Only the entry block: another block's arguments are not the mold/clone pair.
 +  mlir::Block &entry = copyRegion.front();
 +  if (assign->getBlock() != &entry || entry.getNumArguments() != 2)
 +    return false;
 +
-+  if (assign.getLhs() != entry.getArgument(1))
++  mlir::Value mold = privateOp.getCopyMoldArg();
++  if (assign.getLhs() != privateOp.getCopyPrivateArg())
 +    return false;
 +
-+  mlir::Value orig = entry.getArgument(0);
++  // A POINTER firstprivate copies the association, so the data aliases.
++  auto isPointer = [](mlir::Value v) -> bool {
++    auto boxTy = mlir::dyn_cast<fir::BaseBoxType>(fir::unwrapRefType(v.getType()));
++    return boxTy && boxTy.isPointer();
++  };
++  if (isPointer(mold))
++    return false;
++
 +  mlir::Value rhs = assign.getRhs();
-+  if (rhs == orig)
++  if (rhs == mold)
 +    return true;
-+  // A boxed privatizer loads the original's descriptor first.
++  // A boxed privatizer loads the mold's descriptor first.
 +  auto load = rhs.getDefiningOp<fir::LoadOp>();
-+  return load && load.getMemref() == orig;
++  return load && load.getMemref() == mold;
 +}
 +
  namespace {
@@ -76,18 +76,16 @@ index 44affd514f613..c82e21a42dd44 100644
        mlir::AliasResult aliasRes = aliasAnalysis.alias(lhs, rhs);
        if (!aliasRes.isNo()) {
 diff --git a/flang/test/HLFIR/inline-hlfir-assign.fir b/flang/test/HLFIR/inline-hlfir-assign.fir
-index 6cf6fcedb0af1..a594bc3e9f13e 100644
+index 6cf6fcedb0af1..17ebc55602320 100644
 --- a/flang/test/HLFIR/inline-hlfir-assign.fir
 +++ b/flang/test/HLFIR/inline-hlfir-assign.fir
-@@ -496,3 +496,87 @@ func.func @_QPtest_scalar_ref_from_lhs(%arg0: !fir.ref<!fir.array<10xf32>>) {
+@@ -496,3 +496,100 @@ func.func @_QPtest_scalar_ref_from_lhs(%arg0: !fir.ref<!fir.array<10xf32>>) {
  // CHECK:           }
  // CHECK:           return
  // CHECK:         }
 +
-+// The copy-in of an omp.private copy region writes the privatized clone,
-+// which the operation defines to be distinct from the original host variable,
-+// so it inlines even though alias analysis cannot prove it from the block
-+// arguments alone.
++// The copy-in writes the clone, which is distinct from the mold, so it inlines
++// even though alias analysis cannot prove it from the block arguments alone.
 +omp.private {type = firstprivate} @_QFtestEc_firstprivate : !fir.box<!fir.array<1xf64>> copy {
 +^bb0(%arg0: !fir.ref<!fir.box<!fir.array<1xf64>>>, %arg1: !fir.ref<!fir.box<!fir.array<1xf64>>>):
 +  %0 = fir.load %arg0 : !fir.ref<!fir.box<!fir.array<1xf64>>>
@@ -133,9 +131,8 @@ index 6cf6fcedb0af1..a594bc3e9f13e 100644
 +// CHECK:           omp.yield(%[[CLONE3]] : !fir.ref<!fir.box<!fir.array<2xf64>>>)
 +// CHECK:         }
 +
-+// An RHS computed by a call is not known to designate the original: the call
-+// may return unrelated memory reached through global state. Keeps its
-+// aliasing check.
++// An RHS from a call may designate unrelated memory, so it keeps its aliasing
++// check.
 +func.func private @get_box(!fir.ref<!fir.box<!fir.array<2xf64>>>) -> !fir.box<!fir.array<2xf64>>
 +omp.private {type = firstprivate} @_QFtestEf_firstprivate : !fir.box<!fir.array<2xf64>> copy {
 +^bb0(%arg0: !fir.ref<!fir.box<!fir.array<2xf64>>>, %arg1: !fir.ref<!fir.box<!fir.array<2xf64>>>):
@@ -166,4 +163,20 @@ index 6cf6fcedb0af1..a594bc3e9f13e 100644
 +// CHECK:           cf.br ^bb1
 +// CHECK:         ^bb1(%[[A:.*]]: !fir.ref<!fir.box<!fir.array<2xf64>>>, %[[B:.*]]: !fir.ref<!fir.box<!fir.array<2xf64>>>):
 +// CHECK:           hlfir.assign %[[RHS5]] to %[[B]] : !fir.box<!fir.array<2xf64>>, !fir.ref<!fir.box<!fir.array<2xf64>>>
++// CHECK:         }
++
++// A POINTER firstprivate shares data between mold and clone, so the copy
++// aliases and keeps its check despite matching the shape. Guards a future
++// codegen change; lowering uses fir.store, not hlfir.assign, today.
++omp.private {type = firstprivate} @_QFtestEp_firstprivate : !fir.box<!fir.ptr<!fir.array<?xf64>>> copy {
++^bb0(%arg0: !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>, %arg1: !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>):
++  %0 = fir.load %arg0 : !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>
++  hlfir.assign %0 to %arg1 : !fir.box<!fir.ptr<!fir.array<?xf64>>>, !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>
++  omp.yield(%arg1 : !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>)
++}
++// CHECK-LABEL:   omp.private {type = firstprivate} @_QFtestEp_firstprivate : !fir.box<!fir.ptr<!fir.array<?xf64>>> copy {
++// CHECK:         ^bb0(%[[MOLD:.*]]: !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>, %[[CLONE:.*]]: !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>):
++// CHECK:           %[[RHS:.*]] = fir.load %[[MOLD]]
++// CHECK:           hlfir.assign %[[RHS]] to %[[CLONE]] : !fir.box<!fir.ptr<!fir.array<?xf64>>>, !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>
++// CHECK:           omp.yield(%[[CLONE]] : !fir.ref<!fir.box<!fir.ptr<!fir.array<?xf64>>>>)
 +// CHECK:         }
