@@ -1,0 +1,16 @@
+Stack dump:
+0.      Program arguments: /opt/cray/pe/cce/20.0.2/cce-clang/x86_64/bin/lld
+-flavor gnu --no-undefined -shared -plugin-opt=mcpu=gfx90a
+-plugin-opt=-disable-promote-alloca-to-lds -plugin-opt=defaults=cray
+-plugin-opt=O2 -plugin-opt=save-temps -o
+/lustre/orion/cfd154/scratch/sbryngelson/wt-cce20/build/staging/gpu-mp-de0ac
+9c1a8/simulation-cce-openmppost_lld.amdgpu
+/lustre/orion/cfd154/scratch/sbryngelson/wt-cce20/build/staging/gpu-mp-de0ac
+9c1a8/simulation-cce-openmp-pre-llc.bc
+1.      Running pass 'Function Pass Manager' on module 'ld-temp.o'.
+2.      Running pass 'Infer address spaces' on function
+'@"s_cbc$m_cbc_$ck_L596_13"'
+gmake[3]: *** [CMakeFiles/simulation.dir/build.make:2330: simulation] Error
+1
+gmake[2]: *** [CMakeFiles/Makefile2:110: CMakeFiles/simulation.dir/all]
+Error 2

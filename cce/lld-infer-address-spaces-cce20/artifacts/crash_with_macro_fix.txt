@@ -1,0 +1,41 @@
+c9c1a8/fypp/simulation/m_start_up.fpp.f90".
+
+[ 99%] Building Fortran object
+CMakeFiles/simulation.dir/fypp/simulation/p_main.fpp.f90.o
+ftn-5025 ftn: WARNING in command line
+The lister is using the source file
+"../../../lustre/orion/cfd154/scratch/sbryngelson/wt-cce20/src/simulation/p_
+main.fpp", rather than the specified source file
+"/lustre/orion/cfd154/scratch/sbryngelson/wt-cce20/build/staging/gpu-mp-de0a
+c9c1a8/fypp/simulation/p_main.fpp.f90".
+
+[100%] Linking Fortran executable simulation
+PLEASE submit a bug report to HPE at https://support.hpe.com/ and include
+the crash backtrace.
+Stack dump:
+0.      Program arguments: /opt/cray/pe/cce/20.0.2/cce-clang/x86_64/bin/lld
+-flavor gnu --no-undefined -shared -plugin-opt=mcpu=gfx90a
+-plugin-opt=-disable-promote-alloca-to-lds -plugin-opt=defaults=cray
+-plugin-opt=O2 -plugin-opt=save-temps -o
+/lustre/orion/cfd154/scratch/sbryngelson/wt-cce20/build/staging/gpu-mp-de0ac
+9c1a8/simulation-cce-openmppost_lld.amdgpu
+/lustre/orion/cfd154/scratch/sbryngelson/wt-cce20/build/staging/gpu-mp-de0ac
+9c1a8/simulation-cce-openmp-pre-llc.bc
+1.      Running pass 'Function Pass Manager' on module 'ld-temp.o'.
+2.      Running pass 'Infer address spaces' on function
+'@"s_cbc$m_cbc_$ck_L596_13"'
+malloc_consolidate(): unaligned fastbin chunk detected
+gmake[3]: *** [CMakeFiles/simulation.dir/build.make:2330: simulation] Error
+1
+gmake[2]: *** [CMakeFiles/Makefile2:110: CMakeFiles/simulation.dir/all]
+Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:117: CMakeFiles/simulation.dir/rule]
+Error 2
+gmake: *** [Makefile:183: simulation] Error 2
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+Troubleshooting Tips
+
+1. Rebuild with --debug for debug compiler flags and verbose output
