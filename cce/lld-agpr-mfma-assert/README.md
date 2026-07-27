@@ -1,7 +1,10 @@
 # Cray CCE 21.x: `lld` asserts in "AMDGPU Rewrite AGPR-Copy-MFMA" during device LTO
 
-**Status: confirmed on CCE 21.0.0 and 21.0.2. Blocks any GPU-offload build of MFC.
-Not yet filed with HPE (the linker itself asks for a report).**
+**Status: confirmed on CCE 21.0.0 and 21.0.2. Root-caused — the pass gates on AGPRs being
+*allocated* rather than on MFMA being present, and gfx90a's unified register file makes
+high-pressure MFMA-free kernels allocate AGPRs. A portable source-level workaround exists
+and builds MFC clean on 21.0.2 (see below). Not yet filed with HPE (the linker itself asks
+for a report).**
 
 ## Tracking
 
@@ -77,39 +80,89 @@ Backtrace bottoms out in `AMDGPURewriteAGPRCopyMFMAImpl::run(MachineFunction&)`.
 The same module at `-O0` does not crash — the pass is only in the optimised regalloc
 pipeline.
 
-## Root cause investigation
+## Root cause
 
-Ruled out, each with an experiment rather than by inspection:
+**The pass gates on AGPRs having been *allocated*, not on MFMA being present.** Upstream
+`AMDGPURewriteAGPRCopyMFMA.cpp`:
 
-| hypothesis | test | result |
+```cpp
+bool AMDGPURewriteAGPRCopyMFMAImpl::run(MachineFunction &MF) const {
+  if (!ST.hasGFX90AInsts()) return false;
+  // Early exit if no AGPRs were assigned.
+  if (!LRM.isPhysRegUsed(AMDGPU::AGPR0)) return false;
+  ...
+  if (MadeChange) eliminateSpillsOfReassignedVGPRs();
+}
+```
+
+That is the whole story. gfx90a has a **unified VGPR/AGPR register file**: when a kernel
+needs more than 256 VGPRs, the allocator spills into the AGPR half *as ordinary storage*,
+with no matrix instruction anywhere in the function. `isPhysRegUsed(AGPR0)` is then true,
+the early exit does not fire, and a pass written for MFMA code walks a function that
+contains none — asserting in the `LiveIntervals`/`SlotIndexes` bookkeeping underneath
+`eliminateSpillsOfReassignedVGPRs()`.
+
+So "MFC contains no MFMA" and "the pass runs on MFC" are not in tension, and the correct
+statement of the bug is: *the AGPR-allocated gate is too weak a proxy for the MFMA gate the
+pass actually requires.*
+
+### The decisive experiment
+
+Register pressure **is** the trigger — an earlier revision of this file wrongly ruled it
+out, because every pressure knob it tried was pushed in the direction of *more* registers
+per thread (which increases AGPR use) rather than fewer. Reversing the direction suppresses
+the crash outright. All on the reduced 495 KB module via `llc`:
+
+| attribute | direction | result |
 |---|---|---|
-| MFC's macro change activating 51 `INLINEALWAYS`/`INLINENEVER` directives | full build with the commit reverted (`INLINENEVER count = 0`) | ✗ crashes identically on stock upstream master |
-| the `"amdgpu-agpr-alloc"="0"` annotation is mishandled | remove it; set it to `4`; set it to `32` | ✗ crashes in all four variants |
-| ordinary register-spill pressure driving AGPR use | add `amdgpu-waves-per-eu=1,1`; `amdgpu-num-vgpr=256`; `amdgpu-flat-work-group-size=1,64` | ✗ all still crash |
-| one unlucky kernel, fixable in MFC source | delete the offender, re-run | ✗ a second appears (`s_compute_bubble_el_dynamics`, `m_bubbles_EL.fpp:633`) |
+| `amdgpu-waves-per-eu="1,1"` | low occupancy → **max** registers | **crash** |
+| `amdgpu-waves-per-eu="4,4"` / `"8,8"` | high occupancy → fewer registers | **ok** |
+| `amdgpu-flat-work-group-size="1,256"` (default) | 256 threads | **crash** |
+| `amdgpu-flat-work-group-size="256,256"` | 256 threads | **crash** |
+| `amdgpu-flat-work-group-size="1,512"` / `"1,1024"` | more threads → fewer registers each | **ok** |
+| `amdgpu-agpr-alloc="0"` (min only) | unbounded max | **crash** |
+| `amdgpu-agpr-alloc="0,0"` / `"0,1"` | max capped | **ok** |
 
-What stands: the pass is [new in LLVM](https://www.mail-archive.com/llvm-branch-commits@lists.llvm.org/msg51361.html)
-(PR #145024, "replace VGPR MFMAs with AGPR") and still
-[gaining tests for AGPR interference](https://www.mail-archive.com/llvm-branch-commits@lists.llvm.org/msg53713.html)
-(PR #149026). **MFC contains no MFMA/matrix instructions at all**, so the pass is asserting
-while examining code it should have nothing to transform in. The assertion is a `SlotIndex`
-that fails `isValid()` — i.e. something queries an index for an instruction that is not in
-the `SlotIndexes` map (typically erased, or newly created without an index), which is
-consistent with the pass consulting `LiveIntervals` for a value it has already invalidated.
+Every "ok" row is the same mechanism: cap the per-thread register budget, the allocator
+stops reaching into AGPRs, `isPhysRegUsed(AGPR0)` goes false, the pass early-exits.
 
-Pinning the exact statement needs either an LLVM built with `-g` or the upstream source for
-`AMDGPURewriteAGPRCopyMFMA.cpp` at CCE 21.0.2's vintage; the shipped `llc` is optimised so
-the frame is inlined away.
+`optnone` also suppresses it (the pass honours `skipFunction()`), confirming it is confined
+to the optimised regalloc pipeline.
 
 ## Trigger
 
-The named function is the second `GPU_PARALLEL_LOOP` in `s_compute_bubble_EE_source`
-(`src/simulation/m_bubbles_EE.fpp:185`) — a very high-register-pressure kernel: 17
-privatised scalars/arrays plus a `copy` reduction, over a `collapse(3)` loop nest. That is
-consistent with a pass that rewrites AGPR copies running into an invalid slot index during
-register allocation.
+Exactly **two** functions in the whole program, both adaptive-`dt` bubble sub-stepping
+kernels — the highest-register-pressure code in MFC:
 
-Note MFC uses no MFMA/matrix instructions at all, so this pass should be inert for it.
+```
+m_bubbles_EE.fpp:185   s_compute_bubble_EE_source     (25 privates + copy reduction, collapse(3))
+m_bubbles_EL.fpp:633   s_compute_bubble_EL_dynamics   (32 privates + copy reduction)
+```
+
+Note that kernel *size* is not the trigger: forcing the inlined sub-step routines to
+`INLINENEVER` (shrinking the kernel substantially) still crashes. It is specifically
+whether the allocator ends up touching AGPR0.
+
+## Usable workaround
+
+Since `amdgpu-flat-work-group-size` is what OpenMP's `thread_limit` and OpenACC's
+`vector_length` lower to, the fix is expressible in **portable source** — no compiler flag,
+no build-system hack, no `-plugin-opt` injection (for which no supported path exists, see
+`../lld-infer-address-spaces-cce20`):
+
+```fortran
+$:GPU_PARALLEL_LOOP(private='[...]', collapse=3, copy='[adap_dt_stop_sum]', &
+                    extraOmpArgs='thread_limit(1024)', extraAccArgs='vector_length(1024)')
+```
+
+Applied to just those two loops, **MFC builds clean on CCE 21.0.2 under both `--gpu mp` and
+`--gpu acc`** — zero `ftn` errors, zero linker crashes, all three executables produced.
+This is the first CCE newer than 19.0.0 to link this code at all.
+
+The cost is confined to two kernels that only run for bubble cases with adaptive `dt`:
+forcing 1024-thread workgroups lowers their per-thread register budget and trades AGPR
+storage for scratch traffic. It is a workaround for a compiler defect, not a tuning choice,
+and should be reverted once the gate is fixed upstream.
 
 ## Reproducing
 
@@ -151,7 +204,11 @@ This is what blocks MFC from moving off `cce/19.0.0` on Frontier:
 |---|---|---|
 | 19.0.0 | yes | **no** — store-dropping IPA bug, `../cce19-ipa-contiguous-mix/` (worked around in MFC source) |
 | 20.0.2 | **no** — `../lld-infer-address-spaces-cce20/` | — |
-| 21.0.0, 21.0.2 | **no** — this bug | — |
+| 21.0.0, 21.0.2 | **not by default** — this bug | — |
+| 21.0.2 **+ the `thread_limit`/`vector_length` workaround above** | **yes**, `mp` and `acc` | under test |
 
-There is currently no CCE on Frontier that both links this code and computes correct
-answers, and no supported way to force the device link to `O0` (see the CCE 20 report).
+The workaround makes 21.0.2 the first CCE newer than 19.0.0 to link this code, so the
+practical path off 19.0.0 now exists in source. It is still a defect worth fixing upstream:
+any gfx90a Fortran offload code with enough register pressure to spill into AGPRs will hit
+this, with no diagnostic pointing at the cause and no supported way to force the device link
+to `O0` (see the CCE 20 report).
