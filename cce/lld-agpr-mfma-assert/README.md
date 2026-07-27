@@ -42,13 +42,56 @@ So it is **not** a 21.0.2 regression — the whole 21.x line is affected. Loweri
 optimisation level to `O1` does not avoid it; only `O0` does, which disables device LTO
 optimisation and is not viable for production.
 
-CCE 20.x is untested here: its `lld` rejects 21.x-produced bitcode with
-`lld: error: Invalid record`, so testing it requires a full rebuild rather than replaying
-the saved module. (An earlier note claiming "20.0.2 → error" as a *result* was wrong — that
-was this bitcode-version mismatch, not a verdict on 20.0.2.)
+CCE 20.0.2 was subsequently built from scratch and fails too, but with a *different*
+crash — see `../lld-infer-address-spaces-cce20/`. (Replaying this module through 20.0.2's
+`lld` only yields `lld: error: Invalid record`, a bitcode-version mismatch; that is not a
+verdict on 20.0.2 and an earlier note treating it as one was wrong.)
 
 No flag disables the pass. `-plugin-opt=-help-hidden` exposes 112 AMDGPU options; the only
 MFMA-related one is `--amdgpu-mfma-padding-ratio`, which does not gate this rewrite.
+
+## Standalone reproducer (`repro/`)
+
+CCE 21.0.2 ships its own matching LLVM 21.1.8 **with assertions enabled**, including `llc`,
+`llvm-extract`, `llvm-dis` and `llvm-reduce` in `cce-clang/x86_64/bin`. That allows the
+crash to be reduced from a 19 MB whole-program link to a **495 KB single-function module**
+driven by `llc` alone — no MFC, no build system, no `lld`, no MPI, no GPU:
+
+```
+$ ./repro/run.sh
+llc: SlotIndexes.h:96: llvm::SlotIndex::listEntry(): Assertion
+     `isValid() && "Attempt to compare reserved index."' failed.
+2. Running pass 'AMDGPU Rewrite AGPR-Copy-MFMA' on function
+   '@"s_compute_bubble_ee_source$m_bubbles_ee_$ck_L185_28"'
+```
+
+Backtrace bottoms out in `AMDGPURewriteAGPRCopyMFMAImpl::run(MachineFunction&)`.
+The same module at `-O0` does not crash — the pass is only in the optimised regalloc
+pipeline.
+
+## Root cause investigation
+
+Ruled out, each with an experiment rather than by inspection:
+
+| hypothesis | test | result |
+|---|---|---|
+| MFC's macro change activating 51 `INLINEALWAYS`/`INLINENEVER` directives | full build with the commit reverted (`INLINENEVER count = 0`) | ✗ crashes identically on stock upstream master |
+| the `"amdgpu-agpr-alloc"="0"` annotation is mishandled | remove it; set it to `4`; set it to `32` | ✗ crashes in all four variants |
+| ordinary register-spill pressure driving AGPR use | add `amdgpu-waves-per-eu=1,1`; `amdgpu-num-vgpr=256`; `amdgpu-flat-work-group-size=1,64` | ✗ all still crash |
+| one unlucky kernel, fixable in MFC source | delete the offender, re-run | ✗ a second appears (`s_compute_bubble_el_dynamics`, `m_bubbles_EL.fpp:633`) |
+
+What stands: the pass is [new in LLVM](https://www.mail-archive.com/llvm-branch-commits@lists.llvm.org/msg51361.html)
+(PR #145024, "replace VGPR MFMAs with AGPR") and still
+[gaining tests for AGPR interference](https://www.mail-archive.com/llvm-branch-commits@lists.llvm.org/msg53713.html)
+(PR #149026). **MFC contains no MFMA/matrix instructions at all**, so the pass is asserting
+while examining code it should have nothing to transform in. The assertion is a `SlotIndex`
+that fails `isValid()` — i.e. something queries an index for an instruction that is not in
+the `SlotIndexes` map (typically erased, or newly created without an index), which is
+consistent with the pass consulting `LiveIntervals` for a value it has already invalidated.
+
+Pinning the exact statement needs either an LLVM built with `-g` or the upstream source for
+`AMDGPURewriteAGPRCopyMFMA.cpp` at CCE 21.0.2's vintage; the shipped `llc` is optimised so
+the frame is inlined away.
 
 ## Trigger
 
@@ -83,26 +126,24 @@ source ./mfc.sh load -c f -m g
 # bitcode lands in build/staging/gpu-mp-*/simulation-cce-openmp-pre-llc.bc
 ```
 
-The bitcode itself is not committed here (19 MB / 12 MB).
+The 19 MB / 12 MB whole-program bitcode is not committed. It is not needed: `repro/`
+contains the reduced 495 KB single-function module that reproduces with `llc` alone.
 
-Reduction was attempted and does **not** work on-system. ROCm 7.2.0 does ship
-`llvm-extract` / `llvm-reduce` / `opt` (AMD LLVM 22.0.0git) in
-`/opt/rocm-7.2.0/lib/llvm/bin`, and `llvm-extract --func=...` does cut the module from
-19 MB to 576 KB. But anything round-tripped through those tools is rejected by CCE's
-older LLVM for an unrelated reason:
-
-```
-Intrinsic has incorrect argument type!  ptr @llvm.lifetime.start.p5
-```
-
-LLVM 22 changed that intrinsic's signature, so the extracted module fails in the `verify`
-pass rather than reaching the AGPR rewrite — it is not a valid reproducer. Reducing this
-properly needs an LLVM matching CCE 21's vintage (~LLVM 19/20). Until then the full
-`-pre-llc.bc` is the reproducer.
+(An earlier revision of this file claimed no `llvm-extract`/`llc` exists on Frontier. That
+was wrong — CCE ships a full matching LLVM 21.1.8 toolchain in `cce-clang/x86_64/bin`; the
+mistake was an `ls` glob that missed them. ROCm's LLVM 22 tools *are* unusable here, but
+only because LLVM 22 changed the `llvm.lifetime.start` signature, so anything round-tripped
+through them is rejected by CCE's older LLVM before reaching the failing pass.)
 
 ## Impact
 
-This is what blocks MFC from moving off `cce/19.0.0` on Frontier. CCE 19.0.0 carries the
-store-dropping IPA bug in `../cce19-ipa-contiguous-mix/`, so the two known-good options are
-currently: stay on a compiler with a silent wrong-answer bug, or move to 21.x and be unable
-to link. CCE 20.x is the obvious middle ground and is being evaluated.
+This is what blocks MFC from moving off `cce/19.0.0` on Frontier:
+
+| CCE | links MFC? | correct answers? |
+|---|---|---|
+| 19.0.0 | yes | **no** — store-dropping IPA bug, `../cce19-ipa-contiguous-mix/` (worked around in MFC source) |
+| 20.0.2 | **no** — `../lld-infer-address-spaces-cce20/` | — |
+| 21.0.0, 21.0.2 | **no** — this bug | — |
+
+There is currently no CCE on Frontier that both links this code and computes correct
+answers, and no supported way to force the device link to `O0` (see the CCE 20 report).
