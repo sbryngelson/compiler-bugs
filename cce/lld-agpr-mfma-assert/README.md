@@ -83,10 +83,22 @@ source ./mfc.sh load -c f -m g
 # bitcode lands in build/staging/gpu-mp-*/simulation-cce-openmp-pre-llc.bc
 ```
 
-The bitcode itself is not committed here (19 MB / 12 MB). No `llvm-extract`, `llvm-reduce`,
-`opt` or `llc` is present in either the CCE or ROCm trees on Frontier, so a function-level
-reduction was not practical on-system; reducing it would be the natural next step before
-filing.
+The bitcode itself is not committed here (19 MB / 12 MB).
+
+Reduction was attempted and does **not** work on-system. ROCm 7.2.0 does ship
+`llvm-extract` / `llvm-reduce` / `opt` (AMD LLVM 22.0.0git) in
+`/opt/rocm-7.2.0/lib/llvm/bin`, and `llvm-extract --func=...` does cut the module from
+19 MB to 576 KB. But anything round-tripped through those tools is rejected by CCE's
+older LLVM for an unrelated reason:
+
+```
+Intrinsic has incorrect argument type!  ptr @llvm.lifetime.start.p5
+```
+
+LLVM 22 changed that intrinsic's signature, so the extracted module fails in the `verify`
+pass rather than reaching the AGPR rewrite — it is not a valid reproducer. Reducing this
+properly needs an LLVM matching CCE 21's vintage (~LLVM 19/20). Until then the full
+`-pre-llc.bc` is the reproducer.
 
 ## Impact
 
