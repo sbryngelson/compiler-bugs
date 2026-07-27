@@ -53,15 +53,19 @@ CCE 21.x behaves the same way (`O2` and `O1` crash, `O0` links), though in a dif
 pass. So both defects live in the optimising device-LTO pipeline, and `O0` is the only
 level that survives.
 
-Appending `-plugin-opt=O0` *after* the driver's `-plugin-opt=O2` overrides it and links,
-which gives a usable — if unoptimised — workaround:
+Appending `-plugin-opt=O0` *after* the driver's `-plugin-opt=O2` overrides it and links
+when `lld` is invoked by hand. **But there is no supported way to get it there through the
+Cray driver**, so this is a diagnostic result, not a usable workaround:
 
-```cmake
-target_link_options(${a_target} PRIVATE "-Wl,-plugin-opt=O0")
-```
+| attempt | what happens |
+|---|---|
+| `-Wl,-plugin-opt=O0` | goes to the **host** linker (GNU `ld`) -> `ld: bad -plugin-opt option` |
+| `-Wc,-plugin-opt=O0` | documented as "arguments to the device linker", but actually reaches **`llvm-link`** -> `llvm-link: Unknown command line argument '-plugin-opt=O0'` |
+| PATH shim in front of `lld` | the driver invokes `lld` by **absolute path** (`/opt/cray/pe/cce/20.0.2/cce-clang/x86_64/bin/lld`), so it is never consulted |
 
-That disables device LTO optimisation, so it trades GPU performance for the ability to
-build at all. It is a stopgap, not a fix.
+The practical consequence is that this bug fully blocks the build. The `O0` result is still
+useful evidence: it localises the defect to the optimising device-LTO pipeline rather than
+to code generation or to MFC's source.
 
 ## Relationship to the CCE 21.x bug
 
