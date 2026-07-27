@@ -1,0 +1,21 @@
+# ./build_and_run.sh   (baseline, as MFC PR #1679 wrote it)
+ftn: Cray Fortran : Version 19.0.0 (20250207225012_cc4d36e4ff3377d45f0e6e892b5dacd82009a0ca)
+callee=mod_callee.f90 caller=mod_caller.f90 main=main.f90
+
+callee-ipa / caller-ipa        result
+------------------------------ ------
+-Oipa0 / default               RESULT: *** GHOSTS CORRUPTED ***
+default / -Oipa0               RESULT: ghosts OK
+default / default              RESULT: *** GHOSTS CORRUPTED ***
+-Oipa0 / -Oipa0                RESULT: ghosts OK
+
+# ./build_and_run.sh v1_callee.f90 v1_caller.f90   (contiguous on every array dummy)
+ftn: Cray Fortran : Version 19.0.0 (20250207225012_cc4d36e4ff3377d45f0e6e892b5dacd82009a0ca)
+callee=v1_callee.f90 caller=v1_caller.f90 main=main.f90
+
+callee-ipa / caller-ipa        result
+------------------------------ ------
+-Oipa0 / default               RESULT: ghosts OK
+default / -Oipa0               RESULT: ghosts OK
+default / default              RESULT: ghosts OK
+-Oipa0 / -Oipa0                RESULT: ghosts OK

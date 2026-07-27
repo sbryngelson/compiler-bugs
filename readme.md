@@ -34,6 +34,7 @@ its own README with the full analysis; this page is only an index.
 |---|---|---|---|
 | [cce/](cce) — 12 `!$acc declare` cases | CCE 15.0.1 | OLCFDEV-1416, CAST-31898 | reported |
 | [cce/defaultmap-firstprivate](cce/defaultmap-firstprivate) | CCE 19.0.0 | OLCFHELP-26859 | reported |
+| [cce/contiguous-mix-dropped-stores](cce/contiguous-mix-dropped-stores) | CCE 19.0.0 | none filed | **fixed in CCE 20.0.0**; stores to a non-`contiguous` dummy dropped when the same call also passes a `contiguous` one. Host code, no offload. Workaround in MFC [#1679](https://github.com/MFlowCode/MFC/pull/1679) |
 
 ### Intel — ifx OpenMP target offload (GPU Max 1100, Ponte Vecchio)
 

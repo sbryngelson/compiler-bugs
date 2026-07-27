@@ -1,0 +1,6 @@
+cce/18.0.1   rocm/6.3.1    baseline=[ghosts OK]  v1fix=[ghosts OK]
+cce/19.0.0   rocm/6.3.1    baseline=[*** GHOSTS CORRUPTED ***]  v1fix=[ghosts OK]
+cce/20.0.0   rocm/6.4.2    baseline=[ghosts OK]  v1fix=[ghosts OK]
+cce/20.0.2   rocm/6.4.2    baseline=[ghosts OK]  v1fix=[ghosts OK]
+cce/21.0.0   rocm/7.2.0    baseline=[ghosts OK]  v1fix=[ghosts OK]
+cce/21.0.2   rocm/7.2.0    baseline=[ghosts OK]  v1fix=[ghosts OK]

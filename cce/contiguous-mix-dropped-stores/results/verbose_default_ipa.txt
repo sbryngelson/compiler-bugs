@@ -1,0 +1,23 @@
+# ./build_and_run.sh mod_callee.f90 mod_caller.f90 main_verbose.f90
+# default/default IPA -- shows the stores vanish rather than land at a shifted address
+
+build_and_run.sh
+main.f90
+main_verbose.f90
+mod_callee.f90
+mod_caller.f90
+mod_state.f90
+results
+run_versions.sh
+v1_callee.f90
+v1_caller.f90
+   bounds dx/x_cc/x_cb lo: 2*-3,  -4
+   dx (146:152)   = 7*3.33333333333333355E-3
+   x_cb(146:152)  = 0.48999999999999955,  0.4933333333333329,  0.49666666666666626,  0.49999999999999956,  3*0.
+   x_cc(146:152)  = 0.48833333333333334,  0.4916666666666667,  0.49500000000000005,  0.49833333333333335,  3*0.
+   nonzero x_cb anywhere above 149: 0
+   nonzero x_cc anywhere above 149: 0
+   ghost x_cb = 3*0.
+   ghost x_cc = 3*0.
+   worst deviation = 0.51000000000000001
+   RESULT: *** GHOSTS CORRUPTED ***
