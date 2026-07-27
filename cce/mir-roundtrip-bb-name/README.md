@@ -2,6 +2,13 @@
 
 **Status: confirmed. Minor severity — blocks MIR-level debugging, not builds.**
 
+## Tracking
+
+| Where | Link / ID |
+|-------|-----------|
+| Vendor | none filed |
+| MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) (context) |
+| Found while | reducing [`../lld-agpr-mfma-assert`](../lld-agpr-mfma-assert) |
 ## Symptom
 
 `llc -stop-before=<pass>` writes MIR that `llc -x mir -start-before=<pass>` then rejects:
