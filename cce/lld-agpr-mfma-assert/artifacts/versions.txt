@@ -1,0 +1,4 @@
+Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)
+Cray Fortran : Version 21.0.0 (20260120172011_99bfd3022cb16f3dae6a1dfb3c073aec2551133b)
+modules      : cpe/26.03  cce/21.0.2  rocm/7.2.0  craype-accel-amd-gfx90a
+target       : amdgcn-gfx90a (MI250X, Frontier)

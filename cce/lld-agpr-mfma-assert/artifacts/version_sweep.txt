@@ -1,0 +1,3 @@
+  cce/21.0.2  -plugin-opt=O0         -> OK
+  cce/21.0.0  -plugin-opt=O2         -> CRASH on function '@"s_compute_bubble_ee_source$m_bubbles_ee_$ck_L185_28"'
+  cce/20.0.2  -plugin-opt=O2         -> rc=1 lld: error: Invalid record

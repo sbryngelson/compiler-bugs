@@ -1,0 +1,40 @@
+llvm::IndexListEntry* llvm::SlotIndex::listEntry() const: Assertion
+`isValid() && "Attempt to compare reserved index."' failed.
+PLEASE submit a bug report to HPE at https://support.hpe.com/ and include
+the crash backtrace.
+Stack dump:
+0.      Program arguments: /opt/cray/pe/cce/21.0.2/cce-clang/x86_64/bin/lld
+-flavor gnu --no-undefined -shared -plugin-opt=mcpu=gfx90a
+-plugin-opt=-disable-promote-alloca-to-lds -plugin-opt=defaults=cray
+-plugin-opt=O2 -plugin-opt=save-temps -o
+/lustre/orion/cfd154/scratch/sbryngelson/wt-cce21/build/staging/gpu-acc-c819
+d00b45/simulation-cce-openmppost_lld.amdgpu
+/lustre/orion/cfd154/scratch/sbryngelson/wt-cce21/build/staging/gpu-acc-c819
+d00b45/simulation-cce-openmp-pre-llc.bc
+1.      Running pass 'CallGraph Pass Manager' on module 'ld-temp.o'.
+2.      Running pass 'AMDGPU Rewrite AGPR-Copy-MFMA' on function
+'@"s_compute_bubble_ee_source$m_bubbles_ee_$ck_L185_6"'
+#0 0x0000000000a47bca llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)
+(/opt/cray/pe/cce/21.0.2/cce-clang/x86_64/bin/lld+0xa47bca)
+#1 0x0000000000a449ac SignalHandler(int, siginfo_t*, void*) Signals.cpp:0:0
+#2 0x00007fffed2eb97f (/lib64/libc.so.6+0x5797f)
+#3 0x00007fffed33ce7b __pthread_kill_implementation
+(/lib64/libc.so.6+0xa8e7b)
+#4 0x00007fffed2eb8c1 gsignal (/lib64/libc.so.6+0x578c1)
+#5 0x00007fffed2d364e abort (/lib64/libc.so.6+0x3f64e)
+#6 0x00007fffed2d3566 __assert_fail_base.cold (/lib64/libc.so.6+0x3f566)
+#7 0x00007fffed2e3bb1 __assert_fail (/lib64/libc.so.6+0x4fbb1)
+#8 0x00000000014898e7 (anonymous
+namespace)::AMDGPURewriteAGPRCopyMFMAImpl::run(llvm::MachineFunction&) const
+(.part.0) AMDGPURewriteAGPRCopyMFMA.cpp:0:0
+#9 0x0000000001489c34 (anonymous
+namespace)::AMDGPURewriteAGPRCopyMFMALegacy::runOnMachineFunction(llvm::Mach
+ineFunction&) AMDGPURewriteAGPRCopyMFMA.cpp:0:0
+#10 0x0000000002565595
+llvm::MachineFunctionPass::runOnFunction(llvm::Function&) (.part.0)
+MachineFunctionPass.cpp:0:0
+#11 0x0000000004562e42 llvm::FPPassManager::runOnFunction(llvm::Function&)
+(/opt/cray/pe/cce/21.0.2/cce-clang/x86_64/bin/lld+0x4562e42)
+#12 0x0000000003ad12f1 (anonymous
+namespace)::CGPassManager::runOnModule(llvm::Module&)
+CallGraphSCCPass.cpp:0:0
