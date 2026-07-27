@@ -38,6 +38,31 @@ Both `rc=143`, both 0 compile errors, both `Running pass 'Infer address spaces'`
 `artifacts/crash_control_plain_master.txt`. The control was run specifically because the
 local change alters device codegen and could plausibly have been the trigger; it is not.
 
+## Only the optimising LTO pipeline is affected
+
+`artifacts/opt_level_sweep.txt` — replaying the saved bitcode through `lld` at each device
+LTO level:
+
+```
+cce/20.0.2 O2  -> CRASH  Infer address spaces
+cce/20.0.2 O1  -> CRASH  Infer address spaces
+cce/20.0.2 O0  -> OK
+```
+
+CCE 21.x behaves the same way (`O2` and `O1` crash, `O0` links), though in a different
+pass. So both defects live in the optimising device-LTO pipeline, and `O0` is the only
+level that survives.
+
+Appending `-plugin-opt=O0` *after* the driver's `-plugin-opt=O2` overrides it and links,
+which gives a usable — if unoptimised — workaround:
+
+```cmake
+target_link_options(${a_target} PRIVATE "-Wl,-plugin-opt=O0")
+```
+
+That disables device LTO optimisation, so it trades GPU performance for the ability to
+build at all. It is a stopgap, not a fix.
+
 ## Relationship to the CCE 21.x bug
 
 This is a *different* crash from `../lld-agpr-mfma-assert/`, in a different pass and on a

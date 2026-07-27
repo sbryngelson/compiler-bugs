@@ -1,0 +1,3 @@
+  cce/20.0.2 O2  -> CRASH Running pass 'Infer address spaces'
+  cce/20.0.2 O1  -> CRASH Running pass 'Infer address spaces'
+  cce/20.0.2 O0  -> OK
