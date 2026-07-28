@@ -148,6 +148,21 @@ Deleting the `defaultmap` clauses from that translation fixed all of it: the
 four immersed-boundary regression tests plus chemistry and viscous controls went
 from 4 failing to **6/6 passing**, with nothing that previously passed regressed.
 
+Confirmed at suite scale (job 5105473, full 627-test regression suite,
+CCE 21.0.2 / ROCm 7.2.0, MPI). All CCE `defaultmap` emissions removed from the
+OpenMP macro layer:
+
+| backend | before | after |
+|---|---|---|
+| `--gpu mp` | 566 / 627, **60 exit-134** | **622 / 627, 0 exit-134** |
+| `--gpu acc` | 622 / 627 | 622 / 627 (unchanged) |
+
+**Every one of the 60 aborts is eliminated**, and both backends then fail the
+identical five tests — all reported as tolerance mismatches, none as crashes.
+That change touches every OpenMP `target` loop in the application, which is the
+scale the claim needed. The five residuals are a separate question and are *not*
+attributed to this defect.
+
 ## 7. Workaround
 
 Emit no `defaultmap` clause. In OpenMP 5.0 the defaults it was restating are

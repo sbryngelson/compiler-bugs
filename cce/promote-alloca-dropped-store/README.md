@@ -157,6 +157,69 @@ constant index explicitly instead of a computed one. In MFC, replacing
 `idx(norm_dir) = idx(norm_dir) + 1` with an `if`/`else` on `norm_dir` that
 assigns constant indices fixed every affected test.
 
+### Getting the flag through the Cray driver — a silent-loss trap
+
+`CRAY_CCE_LLD_ARGS` carries more than one `-plugin-opt`, and if the value is set
+from a config line that is evaluated through `eval "export $line"` — which is what
+MFC's `toolchain/bootstrap/modules.sh` does — **the value must be quoted in the
+file**. Unquoted, only the *first* flag survives:
+
+```bash
+# quoted -- both flags survive
+_entry='CRAY_CCE_LLD_ARGS="-plugin-opt=-mattr=-mai-insts -plugin-opt=-disable-promote-alloca-to-vector"'
+eval "export $_entry"
+# -> [-plugin-opt=-mattr=-mai-insts -plugin-opt=-disable-promote-alloca-to-vector]
+
+# unquoted -- the second flag is dropped
+_entry='CRAY_CCE_LLD_ARGS=-plugin-opt=-mattr=-mai-insts -plugin-opt=-disable-promote-alloca-to-vector'
+eval "export $_entry"
+# bash: export: `-plugin-opt=-disable-promote-alloca-to-vector': not a valid identifier
+# -> [-plugin-opt=-mattr=-mai-insts]
+```
+
+The failure is silent in practice: the diagnostic goes to stderr, and loader
+output is routinely discarded. The result is that you keep the AGPR *build*
+workaround and lose the *correctness* one, which is the worst possible ordering.
+Tracked as MFC#1690. Verify with `echo "[$CRAY_CCE_LLD_ARGS]"` after loading — it
+must show **both** `-plugin-opt` values.
+
+### Is the flag load-bearing on top of the source patch? Not yet established
+
+The source patch covers only the sites that were found. The question of whether
+unpatched sites remain live matters for upstreaming, and there is a suggestive but
+**inconclusive** measurement:
+
+Job 5106032 (Frontier, CCE 21.0.2) exported
+`CRAY_CCE_LLD_ARGS="-plugin-opt=-disable-promote-alloca-to-vector"`, forced a device
+relink, and ran the five regression tests that were failing without it. All five
+returned `rc=0` on **both** `--gpu mp` and `--gpu acc` — 10/10.
+
+That is not sufficient to attribute the fix to the flag:
+
+* **The job's own gate is blind.** It checked
+  `grep -c 'disable-promote-alloca-to-vector'` against an `mfc.sh test --dry-run`
+  log and reported `0`. Independently checked: MFC dry-run logs contain **zero**
+  `plugin-opt` lines of any kind (0 occurrences in a 1252-line log), so that gate
+  cannot detect the flag whether or not it arrived. It is neither confirmation nor
+  refutation.
+* **There is no same-session control.** The "5 failures" baseline came from a
+  different job in a different tree state, and a tree difference had already been
+  identified between the two investigations. A flag-off arm in the same session,
+  same relink, is what the comparison needs.
+
+Two things would settle it:
+
+1. **A gate that works.** The flag's effect is directly visible in the device
+   image — with `AMDGPUPromoteAllocaToVector` suppressed the array stays in scratch
+   and the `s_cmp_eq_u32 sN, 0xc0000001` / `v_cndmask` pair from §4 is absent, with
+   scratch `buffer_*` traffic in its place. Extract and disassemble
+   (`../lib/extract-device-image.py`, then `llvm-objdump` per the `cce/` README) and
+   count the signature in both builds.
+2. **A flag-off control arm** in the same session and same tree.
+
+Until then, treat the flag as *the belt-and-braces option that is measured to be
+near-free*, not as a demonstrated requirement on top of the source patch.
+
 ## 6. Why this is worse than an ordinary miscompilation
 
 **The defect cannot be detected in the generated binary.** A dropped store
