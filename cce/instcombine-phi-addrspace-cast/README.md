@@ -1,0 +1,112 @@
+# CCE 21: InstCombine builds a bitcast between address spaces and asserts
+
+**Compiler abort.** `InstCombine`'s `foldIntegerTypedPHI` reaches a PHI whose incoming
+values trace back, through `ptrtoint`/`inttoptr`, to pointers in **two different address
+spaces**. It then emits a `bitcast` between them — which is not valid IR, a cast across
+address spaces requires `addrspacecast` — and trips an assertion:
+
+```
+opt: llvm/lib/IR/Instructions.cpp:3040: static llvm::CastInst*
+     llvm::CastInst::Create(llvm::Instruction::CastOps, llvm::Value*, llvm::Type*,
+     const llvm::Twine&, llvm::InsertPosition):
+     Assertion `castIsValid(op, S, Ty) && "Invalid cast!"' failed.
+```
+
+* **Reported by:** OLCF Frontier, project CFD154
+* **Component:** CCE 21.0.2, `lld` / LTO device pipeline, gfx90a
+* **Severity:** abort — loud, no wrong answers
+* **Version tested:** `Cray LLVM 21.0.2 (c3fb8a56d0f4e468a9d0387a93105d6911ac9420) based on LLVM version 21.1.8`
+
+## Tracking
+
+| Where | Link / ID |
+|-------|-----------|
+| Vendor | none filed |
+| Related | [`../private-flat-pointer`](../private-flat-pointer) — same mixed-address-space family |
+
+## 1. Files
+
+| file | what it is |
+| --- | --- |
+| `phi-addrspace.ll` | The reproducer. 25 lines, one function. |
+| `run.sh` | Runs the crash, the partial workaround, and the version triage. |
+
+## 2. Reproduce
+
+```bash
+/opt/cray/pe/cce/21.0.2/cce-clang/x86_64/bin/opt -passes=instcombine phi-addrspace.ll -o /dev/null
+```
+
+One pass, one function, no application and no build system involved.
+
+### Actual
+
+```
+2.  Running pass "instcombine<max-iterations=1;verify-fixpoint>" on function "kernel"
+    Assertion `castIsValid(op, S, Ty) && "Invalid cast!"' failed.
+```
+
+### The pattern
+
+```llvm
+%i    = ptrtoint ptr %flat to i64                ; flat, addrspace 0
+%as1  = inttoptr i64 %i to ptr addrspace(1)      ; global, addrspace 1
+...
+%p    = phi ptr addrspace(1) [ %global, %crit_edge ], [ %as1, %cast ]
+%pi   = ptrtoint ptr addrspace(1) %p to i64
+%pf   = inttoptr i64 %pi to ptr
+```
+
+`p0` and `p1` are both 64-bit in this data layout, so the size check passes and
+`CreateBitOrPointerCast` chooses `bitcast` — but the address spaces differ, so
+`castIsValid` rejects it.
+
+The empty critical-edge block is load-bearing. Branching to `%join` directly from
+`%entry` does **not** reproduce, which is worth knowing before simplifying further.
+
+## 3. Version triage
+
+| LLVM | source | result |
+| --- | --- | --- |
+| 18.0.0 | ROCm 6.3.1 | clean |
+| **21.1.8** | **CCE 21.0.2** | **assert** |
+| 22.0.0 | ROCm 7.2.0 | clean |
+
+Both neighbours are AMD forks rather than pristine upstream, so this is evidence
+rather than proof — but it points at a fix landing upstream between 21 and 22 that
+CCE 21.0.2 predates.
+
+## 4. Workaround — partial, and known to be incomplete
+
+`-plugin-opt=-instcombine-max-num-phis=0` ("Maximum number phis to handle in
+intptr/ptrint folding") clears the crash on the real application kernel, but
+**does not fix the defect**:
+
+| | no flag | `-instcombine-max-num-phis=0` |
+| --- | --- | --- |
+| this 25-line reproducer | assert | **still asserts** |
+| the application kernel it was found in | assert | clean |
+
+So the flag perturbs the multi-PHI walk enough to miss one instance; it does not
+disable the faulty fold. Recorded because the obvious reading of the flag name —
+"this turns the broken transform off" — is wrong, and acting on it would leave a
+latent abort with no diagnostic.
+
+## 5. How it was found
+
+MFC (<https://github.com/MFlowCode/MFC>) hit this linking `simulation` under
+`--case-optimization` on Frontier. Only case-optimized builds reach it: baking the
+case constants into the binary changes inlining and unrolling enough to form the
+PHI. Every other GPU configuration passed its full 627-test suite, so the defect
+sat behind a green test matrix.
+
+The reduction path, for anyone doing this again: the CCE link line already passes
+`-plugin-opt=save-temps`, so the pre-LTO bitcode is on disk. `llvm-extract` the one
+named function out of it, replay the exact pass pipeline from the crash dump with
+`opt`, then `llvm-reduce`. CCE ships matching `opt`, `llvm-extract`, `llvm-dis` and
+`llvm-reduce` under `cce-clang/x86_64/bin`, which is what makes this work — the ROCm
+tools are different LLVM versions and do not reproduce it.
+
+One trap: key the `llvm-reduce` interestingness test on the assertion text, not on a
+symbolized stack frame. `foldIntegerTypedPHI` does not always resolve in the dump, so
+a test that greps for it rejects the unreduced input as "not interesting".
