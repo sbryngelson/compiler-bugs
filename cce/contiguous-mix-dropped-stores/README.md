@@ -1,5 +1,12 @@
 # Cray CCE-19: stores to a non-`CONTIGUOUS` dummy are dropped when the same call also passes a `CONTIGUOUS` one
 
+> **Note on scope:** this entry documents a **CCE 19** defect, kept alongside the CCE 21
+> entries because it is the reason MFC could not simply stay on 19.0.0 while 21 was
+> unusable. It is **fixed in CCE 20.0.0** and absent in 18.x, so it is closed from a
+> vendor standpoint — but the workaround is still live in MFC source (PR #1679), and
+> anyone reverting that workaround on a CCE 19 toolchain will silently corrupt ghost
+> cells again.
+
 Standalone reproducer for a Cray Fortran (CCE 19) host-code miscompile. No OpenMP, no OpenACC,
 no GPU kernel — but the `craype-accel-amd-gfx90a` target module must be loaded.
 

@@ -80,6 +80,33 @@ Backtrace bottoms out in `AMDGPURewriteAGPRCopyMFMAImpl::run(MachineFunction&)`.
 The same module at `-O0` does not crash — the pass is only in the optimised regalloc
 pipeline.
 
+`repro/` holds two modules at different reduction depths:
+
+| file | size | what it is |
+|---|---|---|
+| `crashing_function.bc` | 495 KB | `llvm-extract` of the single crashing function |
+| `reduced-667-line.ll` | 50 KB, 667 lines | the same crash after `llvm-reduce`; **textual IR, readable** |
+
+The reduced module is what the measurement tables below were taken on. Its
+interestingness test was:
+
+```bash
+#!/bin/bash
+/opt/cray/pe/cce/21.0.2/cce-clang/x86_64/bin/llc \
+  -O2 -mcpu=gfx90a -mtriple=amdgcn-amd-amdhsa "$1" -o /dev/null 2>&1 \
+  | grep -q 'Attempt to compare reserved index'
+```
+
+**There is no Fortran-level reproducer.** Attempts to synthesise one from the kernel's
+apparent characteristics (high register pressure, `!DIR$ INLINENEVER` device calls,
+derived-type/`pointer` array indirection, absent `optional` dummies) produced 13 variants,
+**none of which reproduce** — the trigger is more specific than those features. Reduction
+from MFC source would be the way to get one; not done.
+
+Note the two modules were captured from different builds, so the mangled kernel name
+carries a different trailing index (`...$ck_L185_28` vs `...$ck_L185_6`). Same loop, same
+source line, same assertion.
+
 ## Root cause
 
 **The pass gates on AGPRs having been *allocated*, not on MFMA being present.** Upstream
@@ -128,6 +155,79 @@ stops reaching into AGPRs, `isPhysRegUsed(AGPR0)` goes false, the pass early-exi
 
 `optnone` also suppresses it (the pass honours `skipFunction()`), confirming it is confined
 to the optimised regalloc pipeline.
+
+### `amdgpu-agpr-alloc` semantics, measured
+
+`amdgpu-agpr-alloc` is a **function attribute, not a `cl::opt`**: it is absent from
+`llc -help-hidden` (which does list 106 other `amdgpu-` options), and
+`llc -amdgpu-agpr-alloc=0` is rejected as an unknown argument. On the reduced module,
+whose unconstrained allocation takes 228 AGPRs:
+
+| attribute value | resulting `agpr_count` |
+| --- | --- |
+| *absent* | 228 |
+| `"0"` | 228 |
+| `"32"` | 228 |
+| `"0,0"` | 0 |
+| `"0,1"` | 1 |
+| `"1,1"` | 4 |
+| `"0,16"` / `"16,0"` | 16 |
+| `"0,32"` / `"32,0"` / `"16,32"` / `"32,16"` | 32 |
+| `"0,228"` / `"0,300"` | 228 |
+
+So the **single-value form is inert** — `"0"` is behaviourally indistinguishable from
+omitting the attribute. The **paired form is an upper bound**, effective cap ≈
+`max(lo,hi)` rounded up to the 4-AGPR granule (`"1,1"` → 4). Neither form acts as a floor:
+on a low-pressure module every value, including `"8,8"` and `"32,0"`, yields
+`agpr_count = 0`.
+
+A capped `amdgpu-agpr-alloc` would be the cleanest thing to request upstream, but the
+threshold is tighter than "a cap" — the assertion is avoided only when the resulting
+`agpr_count` is **0 or 1**:
+
+| attribute value | effective `agpr_count` | result |
+| --- | --- | --- |
+| `"0,0"` | 0 | OK |
+| `"0,1"` | 1 | OK |
+| `"0,2"`, `"0,3"`, `"0,4"`, `"1,1"`, `"1,2"`, `"2,2"`, `"4,4"`, `"0,256"` | ≥ 2 | assert (134) |
+| `"0"`, *absent* | unbounded (228 here) | assert (134) |
+
+### Cost of the workgroup-size workaround
+
+`vector_length(N)` / `thread_limit(N)` both lower to
+`"amdgpu-flat-work-group-size"="1,N"`, so the cost is measurable directly on the reduced
+module. The threshold is sharp and runs *opposite* to intuition — a larger workgroup is
+what fixes it:
+
+| `amdgpu-flat-work-group-size` | result | `agpr_count` | `private_segment_fixed_size` | instructions | scratch ops |
+| --- | --- | --- | --- | --- | --- |
+| `1,64` | assert (134) | – | – | – | – |
+| `1,256` (default) | assert (134) | – | – | – | – |
+| **`1,512`** | **OK** | **0** | **0** | 1366 | **0** |
+| `1,1024` | OK | 0 | 0 | 1739 | 238 |
+
+Note `1,512` needs no scratch at all while `1,1024` spills — so 512 is the cheaper choice
+where the launch geometry allows it.
+
+### The `-mai-insts` alternative, and why it is worse
+
+Dropping the MAI subtarget feature at codegen (`-plugin-opt=-mattr=-mai-insts`, injected
+via `CRAY_CCE_LLD_ARGS`) also avoids the crash, and was the first workaround used here. It
+is **not** codegen-neutral. An earlier note claimed neutrality on the basis of 12 kernels
+whose instruction streams were byte-identical both ways; that sample was unrepresentative.
+Compiling one whole translation unit (`m_variables_conversion`, ~2.6 MB of IR) with
+`llc -O2 -mcpu=gfx90a` both ways:
+
+| | with MAI | `-mattr=-mai-insts` |
+| --- | --- | --- |
+| max `private_segment_fixed_size` | 256 | 416 |
+| `v_accvgpr_*` instructions | 266 | 0 |
+| scratch `buffer_load`/`buffer_store` | 200 | 480 |
+
+1,749 lines of assembly differ. Losing the AGPRs drops the unified VGPR cap from 512 to
+256, so register pressure moves into scratch — a 2.4× increase in scratch traffic in this
+TU, program-wide rather than confined to two kernels. That is why the source-level
+`thread_limit`/`vector_length` workaround above is preferred.
 
 ## Trigger
 
@@ -202,7 +302,7 @@ This is what blocks MFC from moving off `cce/19.0.0` on Frontier:
 
 | CCE | links MFC? | correct answers? |
 |---|---|---|
-| 19.0.0 | yes | **no** — store-dropping IPA bug, `../cce19-ipa-contiguous-mix/` (worked around in MFC source) |
+| 19.0.0 | yes | **no** — store-dropping IPA bug, [`../contiguous-mix-dropped-stores`](../contiguous-mix-dropped-stores) (worked around in MFC source) |
 | 20.0.2 | **no** — `../lld-infer-address-spaces-cce20/` | — |
 | 21.0.0, 21.0.2 | **not by default** — this bug | — |
 | 21.0.2 **+ the `thread_limit`/`vector_length` workaround above** | **yes**, `mp` and `acc` | under test |

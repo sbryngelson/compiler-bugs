@@ -9,11 +9,22 @@
 #   ./build_and_run.sh                            # baseline
 #   ./build_and_run.sh v1_callee.f90 v1_caller.f90  # the contiguous-everywhere fix
 set -u
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 FC=${FC:-ftn}
 CALLEE=${1:-mod_callee.f90}
 CALLER=${2:-mod_caller.f90}
 MAIN=${3:-main.f90}
+
+# The accel target is load-bearing here even though nothing launches a kernel:
+# with craype-accel-amd-gfx90a unloaded the bug does not appear even on 19.0.0,
+# so an unguarded run reports "ghosts OK" and looks like a fixed compiler.
+# Skipped when FC is overridden (run_versions.sh drives several CCEs itself).
+if [ "$FC" = ftn ]; then
+    . ../lib/guard.sh
+    guard_ftn "${CCE_VERSION:-19.0.0}"
+    guard_accel
+    echo
+fi
 
 printf 'ftn: %s\n' "$($FC --version 2>&1 | head -1)"
 printf 'callee=%s caller=%s main=%s\n\n' "$CALLEE" "$CALLER" "$MAIN"

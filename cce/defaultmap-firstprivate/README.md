@@ -8,6 +8,7 @@ Standalone reproducer for a Cray Fortran (CCE 19) OpenMP target-offload bug.
 |-------|-----------|
 | OLCF Helpdesk | OLCFHELP-26859 |
 | Source | MFC [#1588](https://github.com/MFlowCode/MFC/pull/1588), [#1572](https://github.com/MFlowCode/MFC/pull/1572) |
+| Related | [`../omp-defaultmap-scalar-override`](../omp-defaultmap-scalar-override) — **a different defect**, same clause: this entry is CCE 19 failing to firstprivate scalars that `defaultmap` covers; that one is CCE 21 firstprivating a scalar that was *explicitly* `map`-ed. Do not merge the two. |
 
 ## Symptom
 

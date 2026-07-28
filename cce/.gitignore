@@ -1,0 +1,12 @@
+# build products from the run.sh / build_and_run.sh scripts
+build/
+build-*/
+*.o
+*.mod
+# contiguous-mix-dropped-stores links its test binary as ./repro.
+# Anchored so it cannot swallow lld-agpr-mfma-assert/repro/, which is a
+# committed directory.
+/contiguous-mix-dropped-stores/repro
+# compiler crash debris -- the llc/lld reproducers abort by design
+core
+core.*

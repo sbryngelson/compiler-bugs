@@ -1,7 +1,8 @@
 # Cray CCE 20.0.2: `lld` corrupts the heap in "Infer address spaces" during device LTO
 
-**Status: confirmed on stock upstream MFC, no local patches. Not yet filed with HPE
-(the linker asks for a report).**
+**Status: confirmed on stock upstream MFC, no local patches. Reproduces standalone from the
+committed bitcode via `lld` alone — no MFC, no build system, no GPU (see Reproducing). Not
+yet filed with HPE (the linker asks for a report).**
 
 ## Tracking
 
@@ -91,14 +92,58 @@ answers. MFC works around the 19.0.0 miscompile in source and therefore stays on
 
 ## Reproducing
 
-`-plugin-opt=save-temps` is already in the link line, so a failed build leaves the input
-bitcode behind and the crash replays standalone:
+The saved bitcode **is committed here** as `sim-cce20.bc` (16 MB, whole-program
+pre-codegen module from a CCE 20.0.2 device link with `-plugin-opt=save-temps`). No MFC
+checkout, no build system, no GPU — only CCE 20.0.2's own `lld`:
 
 ```bash
-lld -flavor gnu --no-undefined -shared -plugin-opt=mcpu=gfx90a \
-    -plugin-opt=-disable-promote-alloca-to-lds -plugin-opt=defaults=cray \
-    -plugin-opt=O2 -o /tmp/out.amdgpu simulation-cce-openmp-pre-llc.bc
+cd cce/lld-infer-address-spaces-cce20
+/opt/cray/pe/cce/20.0.2/cce-clang/x86_64/bin/lld -flavor gnu --no-undefined -shared \
+    -plugin-opt=mcpu=gfx90a -plugin-opt=-disable-promote-alloca-to-lds \
+    -plugin-opt=defaults=cray -plugin-opt=O2 -o /tmp/out.amdgpu sim-cce20.bc
 ```
+
+Verified, exit 134:
+
+```
+1. Running pass 'Function Pass Manager' on module 'ld-temp.o'.
+2. Running pass 'Infer address spaces' on function '@"s_cbc$m_cbc_$ck_L596_5"'
+malloc_consolidate(): unaligned fastbin chunk detected
+```
+
+### `llc` does **not** reproduce it — do not use it to conclude the bug is fixed
+
+Running the same module through CCE 20.0.2's `llc` instead of `lld` completes **cleanly**,
+and that is a trap worth documenting:
+
+| | `lld -plugin-opt=O2` | `llc -O2` |
+|---|---|---|
+| exit | **134**, `malloc_consolidate` | **0** |
+| wall time | seconds | 1:35 |
+| output | — | 151 MB, 1,347,897 lines |
+| `.amdhsa_kernel` emitted | — | 453 — the whole program |
+| `Infer address spaces` in pipeline | yes | yes (`-debug-pass=Structure`) |
+| `s_cbc$m_cbc_$ck_L596_5` processed | yes | yes |
+
+So the `llc` run is not a shallow no-op: it does full codegen of every kernel, with the
+named pass in the pipeline and the named function going through it, and still does not
+abort. Two reasons:
+
+* `malloc_consolidate()` reports heap corruption *when the allocator next walks the heap*,
+  not at the bad write. Whether it trips depends on allocation history, which differs
+  completely between `lld`'s LTO pipeline and standalone `llc`. The pass named in the
+  message is where the heap happened to be walked.
+* `llc -O2` runs the codegen pipeline only. The device link additionally runs the full IPO
+  pipeline over the module first, so the IR reaching `Infer address spaces` under `lld` is
+  not the IR that reaches it under `llc`.
+
+Use `lld`. A clean `llc` run proves nothing about this defect.
+
+Note also that **CCE 21.0.2 cannot be used to check this module at all** — its LLVM 21.1.8
+rejects the LLVM-20 bitcode at load (`LLVM ERROR: unsupported calling convention`, ~19 s),
+so it never reaches the pass. That 21.x does not exhibit this crash is established by CCE
+21 builds of MFC linking successfully once `../lld-agpr-mfma-assert` is worked around — not
+by anything replayable from this artifact.
 
 To regenerate from scratch:
 
@@ -110,7 +155,14 @@ source ./mfc.sh load -c f -m g
 ./mfc.sh build -t simulation --gpu mp
 ```
 
-Bitcode is not committed (19 MB). Note that reduction with ROCm's LLVM tools does not
-work — see the note in `../lld-agpr-mfma-assert/README.md`: LLVM 22 changed the
-`llvm.lifetime.start` signature, so anything round-tripped through them is rejected by
-CCE's older LLVM before it reaches the failing pass.
+Note that reduction with ROCm's LLVM tools does not work — see the note in
+`../lld-agpr-mfma-assert/README.md`: LLVM 22 changed the `llvm.lifetime.start` signature,
+so anything round-tripped through them is rejected by CCE's older LLVM before it reaches
+the failing pass.
+
+There is **no reduced reproducer** for this one. The route would be
+`llvm-extract --func='s_cbc$m_cbc_$ck_L596_5'` followed by `llvm-reduce` with an
+interestingness test grepping for `malloc_consolidate` — the procedure used for
+`../lld-agpr-mfma-assert`. Not done. Note it would have to drive `lld`, not `llc`, for the
+reasons above, which makes the interestingness test slower and the reduction less
+convenient.
