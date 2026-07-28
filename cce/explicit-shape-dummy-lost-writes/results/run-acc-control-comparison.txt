@@ -1,0 +1,40 @@
+###### MY variant (declare create(gps,n_gp) + update self)
+dummy=e  wrong=64 of 64   FAIL
+dummy=a  wrong=0 of 64   PASS
+
+###### THEIR variant (declare create(n_gp) only, map array after allocate)
+dummy=e  wrong=0 of 64   PASS
+dummy=a  wrong=0 of 64   PASS
+
+###### debug trace, explicit arm, MY variant
+ACC: Register global 'gps' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Register global 'n_gp' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Start transfer 2 items from ../mine.f90:77
+ACC:       allocate 'gps(:)' (2560 bytes)
+ACC:       attach pointer 'gps (dope vector)' (72 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 3 items from ../mine.f90:63
+ACC:       present 'gps(:)' (2560 bytes)
+ACC:       present 'n_gp' (4 bytes)
+ACC:       already attached pointer 'gps (dope vector)' (72 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../mine.f90:67
+ACC:       present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+
+###### debug trace, explicit arm, THEIR variant
+ACC: Register global 'n_gp' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Start transfer 1 items from ../theirs.f90:51
+ACC: End transfer (to acc 4 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../theirs.f90:52
+ACC:       allocate, copy to acc 'gps(:)' (2560 bytes)
+ACC: End transfer (to acc 2560 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../theirs.f90:56
+ACC:       present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Execute kernel dummyshape_$ck_L56_5 blocks:220 threads:256 async(auto) from ../theirs.f90:56
+ACC: Start transfer 1 items from ../theirs.f90:56
+ACC:       release present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../theirs.f90:58
+###### DONE

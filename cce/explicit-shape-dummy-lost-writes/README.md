@@ -1,15 +1,16 @@
-# CCE: device writes through an explicit-shape dummy with a runtime extent are lost
+# CCE 21: device writes through an explicit-shape dummy with a runtime extent are lost under OpenMP
 
 **Wrong answers, no diagnostic, no crash.** A module-resident allocatable array of a
 derived type is passed to a routine whose dummy is declared **explicit-shape with a
-runtime extent** — `dimension(n_gp)`. Writes performed on the device through that
-dummy are not visible on the host afterwards. The identical routine with an
-**assumed-shape** dummy — `dimension(:)` — is correct.
+runtime extent** — `dimension(n_gp)`. Under OpenMP target offload, writes performed on
+the device through that dummy are not visible on the host afterwards. The identical
+routine with an **assumed-shape** dummy — `dimension(:)` — is correct, and so is the
+identical program under OpenACC.
 
-* **Component:** CCE Fortran, offload data environment, gfx90a
+* **Component:** CCE Fortran, OpenMP target offload data environment, gfx90a
 * **Severity:** silent miscompilation — wrong numerical results
-* **Affected:** CCE **21.0.2** and CCE **19.0.0**, under **both** `-homp` and `-hacc`
-* **Not a regression:** 19.0.0 and 21.0.2 behave identically
+* **Affected:** `-homp`. The OpenACC equivalent is correct.
+* **Versions:** CCE 21.0.2; the OpenMP failure also reproduces on CCE 19.0.0
 
 ## Tracking
 
@@ -17,14 +18,14 @@ dummy are not visible on the host afterwards. The identical routine with an
 |-------|-----------|
 | Vendor | none filed |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
-| Related | [`../promote-alloca-dropped-store`](../promote-alloca-dropped-store), [`../omp-defaultmap-scalar-override`](../omp-defaultmap-scalar-override) — the other silent-wrong-answer defects from the same port |
+| Related | [`../defaultmap-zeroes-resident-arrays`](../defaultmap-zeroes-resident-arrays) — in the application these two chain: a `defaultmap` clause makes the marker array read empty, the ghost-point count returns 0, and the zero-length allocation is what this defect's explicit-shape dummy then receives |
 
 ## Files
 
 | file | what it is |
 |---|---|
 | `dummyshape.f90` | **The reproducer**, OpenMP target offload. Self-checking, 64 elements. |
-| `dummyshape_acc.f90` | The same program in OpenACC. |
+| `dummyshape_acc_fixed.f90` | **The OpenACC control.** Passes on both dummy shapes — this is what makes the defect OpenMP-specific rather than "explicit-shape dummies are unreliable". |
 | `build_and_run.sh` | Guarded build; prints the `srun` lines. |
 | `results/` | The runs quoted below, as captured. |
 
@@ -61,127 +62,76 @@ module swap cce cce/21.0.2
 ./build_and_run.sh              # verifies the toolchain, then prints the srun lines
 ```
 
-### Measured
+### Measured — CCE 21.0.2 / ROCm 7.2.0, gfx90a
 
-```
-                       CCE 21.0.2        CCE 19.0.0
-  -homp  explicit      wrong=64 of 64    wrong=64 of 64    FAIL
-  -homp  assumed       wrong=0  of 64    wrong=0  of 64    PASS
-  -hacc  explicit      wrong=64 of 64    wrong=64 of 64    FAIL
-  -hacc  assumed       wrong=0  of 64    wrong=0  of 64    PASS
-```
-
-Every element is wrong, not some — the writes do not land anywhere the host can see
-them.
-
-## What the mechanism is *not*
-
-`CRAY_ACC_DEBUG=2` shows the data environment is **identical and correct** in both
-the failing and the passing case. The dummy is mapped `present` at its full
-2560 bytes either way, and the copy-back at the end moves the full 2560 bytes to the
-host either way:
-
-```
-  explicit (FAIL)                          assumed (PASS)
-  present 'a(:)' (2560 bytes)              present 'a(:)' (2560 bytes)
-  ...                                      ...
-  copy to host, free, update dope vector   copy to host, free, update dope vector
-      'gps(:)' (2560 bytes)                    'gps(:)' (2560 bytes)
-  End transfer (to host 2560 bytes)        End transfer (to host 2560 bytes)
-```
-
-So this is **not** a zero-length map, and the dummy is not being handed a host
-address in place of a device one. An earlier note on this reproducer said it was;
-that description is not supported by the evidence above and should not be repeated
-without re-measuring.
-
-## What does differ
-
-The launch geometry, which points at the loop bound rather than the mapping:
-
-| | kernel | blocks × threads | for a 64-iteration loop |
+| model | dummy | wrong | result |
 |---|---|---|---|
-| explicit (FAIL) | `dummyshape_$ck_L55_17` | **220 × 256 = 56,320** | wildly oversized |
-| assumed (PASS) | `dummyshape_$ck_L53_14_cce$noloop$form` | 1 × 256 | as expected |
+| OpenMP | `dimension(:)` | 0 / 64 | PASS |
+| OpenMP | `dimension(n_gp)` | **64 / 64** | **FAIL** |
+| OpenACC | `dimension(:)` | 0 / 64 | PASS |
+| OpenACC | `dimension(n_gp)` | 0 / 64 | PASS |
 
-The explicit-shape form launches ~880× the needed threads, which is what you would
-expect if the trip count derived from the dummy's runtime extent `n_gp` is garbage on
-the device — even though `n_gp` itself is mapped and reported `present (4 bytes)`.
+Every element is wrong in the failing row, not some — the writes do not land anywhere
+the host can see them. The OpenMP failure also reproduces on **CCE 19.0.0**, so the
+OpenMP side is not a 21.x regression.
 
-**This is the observation, not a root cause.** We have not established what the
-kernel actually computes for the bound, nor why *no* element lands correctly rather
-than the in-range prefix landing and the rest scribbling out of bounds. Anyone
-pursuing this should start by dumping the trip-count computation in the generated
-device code for the two forms.
+## Why the OpenACC control matters, and how it was got wrong twice
 
-## Workaround
+A model-to-model comparison is only evidence **if the control arm passes**. This
+reproducer had two successive OpenACC controls that failed for reasons unrelated to
+the defect, and each time the failure looked like "OpenACC is affected too":
 
-**Declare the dummy assumed-shape**, `dimension(:)`. Measured correct on both
-compilers and both offload models. In MFC this is the shape these routines should
-have had anyway, since the actual argument is always a whole module allocatable.
+1. **`exit data copyout` after `declare create`.** With `gps` already device-resident,
+   `exit data copyout(gps)` only decrements the reference count and transfers **0 bytes
+   to the host**, so nothing came back and both dummy shapes failed.
+2. **`declare create(gps, n_gp)` on the allocatable.** Replacing the copy-back with
+   `update self` fixed symptom 1 but not the cause: `declare create` on an allocatable
+   establishes the device descriptor at module scope, *before* the array has an extent,
+   so the later `enter data copyin(gps)` finds it present and moves **0 bytes**. The
+   trace shows it plainly — `allocate 'gps(:)' (2560 bytes)` followed by
+   `End transfer (to acc 0 bytes)`. The explicit arm still failed, and that failure was
+   an artifact of this mapping, not of the dummy shape.
 
-## Note on the OpenACC reproducer
-
-`dummyshape_acc.f90` copies results back with `update self` + `exit data delete`
-rather than `exit data copyout`. That is deliberate. With `!$acc declare create`
-already making `gps` device-resident, an `exit data copyout(gps)` only decrements the
-reference count and transfers **0 bytes to the host**, so *both* dummy shapes fail
-and the test isolates nothing:
-
-```
-ACC:       release present 'gps(:)' (2560 bytes)
-ACC: End transfer (to acc 0 bytes, to host 0 bytes)     <<< nothing came back
-```
-
-That is a defect in the test, not in the compiler. An earlier draft of this
-reproducer had it, and it made OpenACC look broken for both shapes. Fixed here; the
-OpenACC rows in the table above are from the fixed version. See
-`results/run-acc-fixed-and-mapping-evidence.txt`.
-
----
-
-## OpenACC control, corrected — the asymmetry is now established
-
-The `dummyshape_acc.f90` in this directory fails on **both** arms, so it cannot serve as a
-control: a reproducer whose control also fails proves nothing about the OpenMP path. The cause
-is double mapping, not the defect under test:
-
-```fortran
-!$acc declare create(gps, n_gp)    ! device descriptor created at module scope,
-                                   ! before the allocatable has an extent
-allocate (gps(n_gp))
-!$acc enter data copyin(gps, n_gp) ! finds gps already present -> transfers nothing
-```
-
-`declare create` on an allocatable establishes the descriptor before there is a shape; the
-later `enter data copyin` sees it present and moves no data. Neither arm ever exercised the
-resident-array path.
-
-`dummyshape_acc_fixed.f90` keeps `declare create` for the **scalar only** and maps the array
-**once, after allocation**:
+`dummyshape_acc_fixed.f90` keeps `declare create` for the **scalar only** and maps the
+array **once, after allocation**:
 
 ```fortran
 !$acc declare create(n_gp)
 ...
 allocate (gps(n_gp))
 !$acc update device(n_gp)
-!$acc enter data copyin(gps)
+!$acc enter data copyin(gps)     ! allocate, copy to acc 'gps(:)' (2560 bytes)
 ```
 
-Measured on Frontier, CCE 21.0.2 / ROCm 7.2.0, gfx90a (`results/run-acc-control-fixed.txt`):
+With that, both OpenACC arms pass and the OpenMP-only asymmetry is established.
 
-| model | dummy | wrong | result |
-|---|---|---|---|
-| OpenACC | `dimension(:)` | 0 / 64 | PASS |
-| OpenACC | `dimension(n_gp)` | 0 / 64 | **PASS** |
-| OpenMP | `dimension(:)` | 0 / 64 | PASS |
-| OpenMP | `dimension(n_gp)` | **64 / 64** | **FAIL** |
+## What the mechanism is *not*
 
-With a working control, the defect is **OpenMP-only**: the same source construct, the same
-compiler, the same hardware, correct under OpenACC and silently wrong under OpenMP. That is
-what makes this reportable to HPE — without the OpenACC row it is merely "explicit-shape
-dummies are unreliable", which invites the response that the code should use assumed-shape.
+**Not a zero-length map, and not a host address handed back in place of a device one.**
+`CRAY_ACC_DEBUG=2` on the OpenMP program shows the data environment is identical and
+correct in both the failing and the passing case — the dummy is mapped `present` at its
+full 2560 bytes either way, and the copy-back moves the full 2560 bytes to the host
+either way:
 
-Worth recording as a general trap: an offload-model comparison is only evidence if the control
-arm passes. Two separate reproducers in this investigation were invalidated by controls that
-failed for reasons unrelated to the defect being tested.
+```
+  explicit (FAIL)                          assumed (PASS)
+  present 'a(:)' (2560 bytes)              present 'a(:)' (2560 bytes)
+  copy to host, free, update dope vector   copy to host, free, update dope vector
+      'gps(:)' (2560 bytes)                    'gps(:)' (2560 bytes)
+  End transfer (to host 2560 bytes)        End transfer (to host 2560 bytes)
+```
+
+**Not the launch geometry.** The explicit-shape form launches `blocks:220 threads:256`
+— 56,320 threads for a 64-iteration loop — against `1 × 256` for the assumed-shape
+form, and an earlier revision of this file offered that as the smoking gun. It is not:
+the **passing** OpenACC explicit-shape arm launches `blocks:220 threads:256` too. The
+oversized grid is how CCE lowers this loop form, not a symptom of the defect.
+
+So no mechanism is established here. What is established is the behaviour, its
+model-dependence, and two hypotheses that are ruled out.
+
+## Workaround
+
+**Declare the dummy assumed-shape**, `dimension(:)`. Measured correct under both models.
+In MFC this is the shape these routines should have had anyway, since the actual
+argument is always a whole module allocatable.

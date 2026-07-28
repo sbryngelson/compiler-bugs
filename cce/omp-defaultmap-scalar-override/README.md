@@ -18,7 +18,7 @@ the same index to nearly every iteration.
 |-------|-----------|
 | Vendor | none filed |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
-| Related | [`../defaultmap-firstprivate`](../defaultmap-firstprivate) — **a different defect**, same clause: there CCE 19 fails to firstprivate scalars covered by `defaultmap` and produces `NaN`; here CCE 21 firstprivates a scalar that was *explicitly* `map`-ed. Do not merge the two. |
+| Related | [`../defaultmap-zeroes-resident-arrays`](../defaultmap-zeroes-resident-arrays) — **very likely the same underlying defect**, seen on resident arrays rather than explicitly-mapped scalars. [`../defaultmap-firstprivate`](../defaultmap-firstprivate) — **a different defect**, same clause: there CCE 19 fails to firstprivate scalars covered by `defaultmap` and produces `NaN`; here CCE 21 firstprivates a scalar that was *explicitly* `map`-ed. Do not merge the two. |
 
 ## 1. Why we believe this is non-conforming
 

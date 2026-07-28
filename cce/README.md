@@ -16,7 +16,8 @@ target (`-homp`); both are affected unless noted.
 | [`lld-agpr-mfma-assert`](lld-agpr-mfma-assert) | `lld`/`llc` asserts in `AMDGPU Rewrite AGPR-Copy-MFMA` | 21.0.0, 21.0.2 | build blocker | LLVM IR, `llc` |
 | [`promote-alloca-dropped-store`](promote-alloca-dropped-store) | Dynamically-indexed store into a 1-based private array is **silently discarded** | 21.0.2 | **wrong answers** | **Fortran, 24 lines** |
 | [`omp-defaultmap-scalar-override`](omp-defaultmap-scalar-override) | Explicit `map(to:)` on a scalar overridden by `defaultmap(...:scalar)`; `atomic capture` then hands out duplicate indices | 21.0.2 | **wrong answers** | **Fortran, 30 lines** |
-| [`explicit-shape-dummy-lost-writes`](explicit-shape-dummy-lost-writes) | Device writes through an **explicit-shape** dummy with a runtime extent are lost; assumed-shape is correct | 19.0.0 **and** 21.0.2 | **wrong answers** | **Fortran, 2 files** |
+| [`defaultmap-zeroes-resident-arrays`](defaultmap-zeroes-resident-arrays) | Any `defaultmap` clause makes a device-resident array read as **all zeros** inside the region | 21.0.2 | **wrong answers** | **Fortran, 7 files** |
+| [`explicit-shape-dummy-lost-writes`](explicit-shape-dummy-lost-writes) | Device writes through an **explicit-shape** dummy with a runtime extent are lost; assumed-shape is correct | 21.0.2, also 19.0.0 | **wrong answers** | **Fortran, 2 files** |
 | [`private-flat-pointer`](private-flat-pointer) | Flat pointer built from a private offset without the aperture; frame offset 0 stores 4 GiB out of bounds | 19.0.0 **and** 21.0.2 | crash | LLVM IR, 15 lines |
 | [`lld-infer-address-spaces-cce20`](lld-infer-address-spaces-cce20) | `lld` corrupts the heap in `Infer address spaces` | 20.0.2 | build blocker | whole-program bitcode, `lld` |
 | [`contiguous-mix-dropped-stores`](contiguous-mix-dropped-stores) | Stores to a non-`CONTIGUOUS` dummy dropped when the same call also passes a `CONTIGUOUS` one | 19.x only, **fixed in 20.0.0** | **wrong answers** | Fortran, 5 files |
@@ -30,9 +31,18 @@ produced wrong numbers a user would have shipped.
 `omp-defaultmap-scalar-override` additionally makes the same source correct under
 OpenACC and wrong under OpenMP.
 
-Note that `defaultmap-firstprivate` and `omp-defaultmap-scalar-override` are **two
-different defects** that happen to involve the same clause, on different CCE major
-versions and in opposite directions. Each README says so; do not merge them.
+Three entries involve `defaultmap` and they are **not** all the same thing:
+
+* `defaultmap-firstprivate` — CCE **19**, `defaultmap(firstprivate:scalar)` fails to
+  firstprivate the scalars it covers, giving `NaN`.
+* `omp-defaultmap-scalar-override` — CCE **21**, `defaultmap(...:scalar)` overrides an
+  *explicit* `map(to:)` on a scalar.
+* `defaultmap-zeroes-resident-arrays` — CCE **21**, any `defaultmap` clause makes a
+  device-**resident array** read as zeros.
+
+The last two are very likely one defect seen from two angles: in both, the presence of
+a `defaultmap` clause breaks data-environment resolution for a variable that another
+mechanism should have resolved. The CCE 19 one is separate and runs the opposite way.
 
 ## Running the reproducers
 
@@ -46,13 +56,19 @@ cce/lld-infer-address-spaces-cce20/run.sh           # no GPU, no modules needed
 cce/promote-alloca-dropped-store/build_and_run.sh   # builds, prints the srun line
 cce/omp-defaultmap-scalar-override/build_and_run.sh # builds, prints the srun line
 cce/explicit-shape-dummy-lost-writes/build_and_run.sh # builds, prints the srun line
+cce/defaultmap-zeroes-resident-arrays/build_and_run.sh # builds, prints the srun line
 cce/contiguous-mix-dropped-stores/build_and_run.sh  # login node, host-only code
 ```
 
-Two of these have **no good-compiler control**: `private-flat-pointer` and
-`explicit-shape-dummy-lost-writes` affect CCE 19.0.0 and 21.0.2 alike, so there is
-no version to diff against. For those, a `PASS` should raise suspicion of the
-toolchain before it raises hope of a fix.
+`private-flat-pointer` has **no good-compiler control** — it affects CCE 19.0.0 and
+21.0.2 alike, so there is no version to diff against, and a `PASS` there should raise
+suspicion of the toolchain before it raises hope of a fix.
+
+**A comparison is only evidence if the control arm passes.** Two reproducers in this
+set were initially got wrong by controls that failed for reasons unrelated to the
+defect under test — see the "got wrong twice" section of
+[`explicit-shape-dummy-lost-writes`](explicit-shape-dummy-lost-writes). If a control
+row fails, fix the control before drawing any conclusion from the failing row.
 
 ### Why the guard exists — read this before trusting a PASS
 

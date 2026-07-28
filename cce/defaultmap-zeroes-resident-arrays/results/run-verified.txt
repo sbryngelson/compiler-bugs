@@ -1,0 +1,27 @@
+##### resident_bare
+pointer-component    host=982 device=982   PASS
+allocatable-component host=982 device=982   PASS
+bare module array    host=982 device=982   PASS
+##### resident_defaultmap
+srun: Step created for StepId=5106041.1
+pointer-component    host=982 device=0   FAIL
+allocatable-component host=982 device=0   FAIL
+bare module array    host=982 device=0   FAIL
+##### dtptr_aggonly
+pointer-component    host=982 device=0   FAIL
+allocatable-component host=982 device=0   FAIL
+bare module array    host=982 device=0   FAIL
+##### dtptr_allocOnly
+pointer-component    host=982 device=0   FAIL
+allocatable-component host=982 device=0   FAIL
+bare module array    host=982 device=0   FAIL
+##### dtptr_ptronly
+pointer-component    host=982 device=0   FAIL
+allocatable-component host=982 device=0   FAIL
+bare module array    host=982 device=0   FAIL
+##### control_negative_bounds
+negative-lb  host=170 device=170   PASS
+one-based    host=170 device=170   PASS
+##### control_named_exit
+named-exit  host=3684 device=3684   PASS
+##### DONE
