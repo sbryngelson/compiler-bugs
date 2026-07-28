@@ -1,0 +1,96 @@
++ D=/lustre/orion/cfd154/scratch/sbryngelson/cce21-bugs/13-defaultmap-overrides-private
++ cd /lustre/orion/cfd154/scratch/sbryngelson/cce21-bugs/13-defaultmap-overrides-private
++ module reset
++ '[' -z '' ']'
++ case "$-" in
++ __lmod_sh_dbg=x
++ '[' -n x ']'
++ set +x
+Shell debugging temporarily silenced: export LMOD_SH_DBG_ON=1 for Lmod's output
+Running "module reset". Resetting modules to system default. The following $MODULEPATH directories have been removed: None
+-------------------------------------------------------------------------------
+There are messages associated with the following module(s):
+-------------------------------------------------------------------------------
+
+DefApps:
+   ROCm/5.x modules and HPE/Cray Programming Environment (CPE) versions <=
+   23.12 were removed on July 1, 2026. For more information regarding the
+   removal, please see https://docs.olcf.ornl.gov/software/software-news.html#frontier-software-changes-july-1-2026
+
+-------------------------------------------------------------------------------
+
+Shell debugging restarted
++ unset __lmod_sh_dbg
++ return 0
++ module load cpe/26.03 rocm/7.2.0 craype-accel-amd-gfx90a
++ '[' -z '' ']'
++ case "$-" in
++ __lmod_sh_dbg=x
++ '[' -n x ']'
++ set +x
+Shell debugging temporarily silenced: export LMOD_SH_DBG_ON=1 for Lmod's output
+
+The following have been reloaded with a version change:
+  1) PrgEnv-cray/8.6.0 => PrgEnv-cray/8.7.0
+  2) cce/18.0.1 => cce/21.0.0
+  3) cray-libsci/24.11.0 => cray-libsci/26.03.0
+  4) cray-mpich/8.1.31 => cray-mpich/9.1.0
+  5) cray-pmi/6.1.15 => cray-pmi/6.1.17
+  6) craype/2.7.33 => craype/2.7.36
+  7) darshan-runtime/3.4.6-mpi => darshan-runtime/3.4.7-mpi
+  8) perftools-base/24.11.0 => perftools-base/26.03.0
+
+Shell debugging restarted
++ unset __lmod_sh_dbg
++ return 0
++ module swap cce cce/21.0.2
++ '[' -z '' ']'
++ case "$-" in
++ __lmod_sh_dbg=x
++ '[' -n x ']'
++ set +x
+Shell debugging temporarily silenced: export LMOD_SH_DBG_ON=1 for Lmod's output
+
+Inactive Modules:
+  1) darshan-runtime
+
+The following have been reloaded with a version change:
+  1) cce/21.0.0 => cce/21.0.2
+
+Shell debugging restarted
++ unset __lmod_sh_dbg
++ return 0
++ export LD_LIBRARY_PATH=/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/lib:/opt/cray/pe/mpich/9.1.0/gtl/lib:/opt/cray/pe/libsci/26.03.0/CRAYCLANG/20.0/x86_64/lib:/opt/cray/pe/cce/21.0.2/cce-clang/x86_64/lib:/opt/cray/pe/cce/21.0.2/cce/x86_64/lib:/opt/cray/pe/perftools/26.03.0/lib64:/opt/cray/pe/pmi/6.1.17/lib:/opt/cray/pe/dsmml/0.3.0/dsmml/lib:/opt/cray/pe/lib64:/opt/cray/lib64:/opt/rocm-7.2.0/lib/roctracer:/opt/rocm-7.2.0/lib/rocprofiler:/opt/rocm-7.2.0/lib:/opt/cray/pe/papi/7.3.0.1/lib64:/opt/cray/libfabric/2.3.1/lib64:/ccs/home/sbryngelson/test/MFC-develop/dependencies/build/lib
++ LD_LIBRARY_PATH=/opt/cray/pe/mpich/9.1.0/ofi/crayclang/20.0/lib:/opt/cray/pe/mpich/9.1.0/gtl/lib:/opt/cray/pe/libsci/26.03.0/CRAYCLANG/20.0/x86_64/lib:/opt/cray/pe/cce/21.0.2/cce-clang/x86_64/lib:/opt/cray/pe/cce/21.0.2/cce/x86_64/lib:/opt/cray/pe/perftools/26.03.0/lib64:/opt/cray/pe/pmi/6.1.17/lib:/opt/cray/pe/dsmml/0.3.0/dsmml/lib:/opt/cray/pe/lib64:/opt/cray/lib64:/opt/rocm-7.2.0/lib/roctracer:/opt/rocm-7.2.0/lib/rocprofiler:/opt/rocm-7.2.0/lib:/opt/cray/pe/papi/7.3.0.1/lib64:/opt/cray/libfabric/2.3.1/lib64:/ccs/home/sbryngelson/test/MFC-develop/dependencies/build/lib
++ ftn --version
++ head -1
+Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)
++ for b in priv_bare priv_defaultmap_present priv_defaultmap_tofrom
++ echo '##### priv_bare #####'
+##### priv_bare #####
++ srun -n1 --gpus-per-task 1 ./priv_bare
++ tail -4
+private-array  wrong=0 of 256   PASS
++ echo RC_priv_bare=0
+RC_priv_bare=0
++ for b in priv_bare priv_defaultmap_present priv_defaultmap_tofrom
++ echo '##### priv_defaultmap_present #####'
+##### priv_defaultmap_present #####
++ srun -n1 --gpus-per-task 1 ./priv_defaultmap_present
++ tail -4
+ACC:            find_in_present_table failed for 'length(:)' (0x4079c0-0x4079d8) from priv_defaultmap_present.f90:10
+ACC: libcrayacc/acc_runtime.c:856 CRAY_ACC_ERROR - Variable not found in present table
+srun: error: frontier04418: task 0: Exited with exit code 1
+srun: Terminating StepId=5106429.1
++ echo RC_priv_defaultmap_present=0
+RC_priv_defaultmap_present=0
++ for b in priv_bare priv_defaultmap_present priv_defaultmap_tofrom
++ echo '##### priv_defaultmap_tofrom #####'
+##### priv_defaultmap_tofrom #####
++ srun -n1 --gpus-per-task 1 ./priv_defaultmap_tofrom
++ tail -4
+private-array  wrong=0 of 256   PASS
++ echo RC_priv_defaultmap_tofrom=0
+RC_priv_defaultmap_tofrom=0
++ echo '=== PRIVTEST_DONE ==='
+=== PRIVTEST_DONE ===

@@ -237,3 +237,26 @@ case:
   the executable; `extract-device-image.py` finds it by scanning for `\x7fELF`
   with `e_machine == 224` and trims to `e_shoff + e_shnum*e_shentsize`.
 * Always check the disassembly is non-empty before believing a zero count.
+
+## Counting the marker in a real build
+
+The index-canonicalization signature is the **instruction form**, not the bare
+constant:
+
+```bash
+grep -cE 's_add_i32 s[0-9]+, s[0-9]+, 0x3fffffff'
+grep -cE 'v_add_u32(_e32)? v[0-9]+, 0x3fffffff'
+```
+
+`0x3fffffff` also appears as an ordinary operand of `s_mul_i32`, `s_addc_u32` and
+`s_subb_u32` in 64-bit address arithmetic. A non-zero count of the bare constant is
+**not** evidence of the defect, and a zero count of it is not evidence of its absence.
+
+Two further cautions, both of which produced wrong counts here:
+
+* ROCm 7.2.0's `llvm-objdump` silently emits **nothing** on these images. Use the
+  6.3.1 one, or check two disassemblers agree, and always verify the line count is
+  non-zero before believing a zero.
+* A discarded store leaves **no instruction behind**. Absence of the marker at a call
+  site is therefore not evidence the site is safe — it is equally consistent with the
+  store having already been eliminated. Screening must happen at source level.

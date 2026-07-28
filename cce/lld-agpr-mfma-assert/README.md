@@ -226,8 +226,33 @@ Compiling one whole translation unit (`m_variables_conversion`, ~2.6 MB of IR) w
 
 1,749 lines of assembly differ. Losing the AGPRs drops the unified VGPR cap from 512 to
 256, so register pressure moves into scratch — a 2.4× increase in scratch traffic in this
-TU, program-wide rather than confined to two kernels. That is why the source-level
-`thread_limit`/`vector_length` workaround above is preferred.
+TU, program-wide rather than confined to two kernels.
+
+### …but end to end, `-mai-insts` is the *faster* of the two
+
+The codegen argument above says the geometry workaround should win, because it confines the
+penalty to 2 kernels out of 453 instead of taxing the whole program. **Measured head to
+head on the same tree, it does not.** MFC benchmark, six cases, `-hacc`, exec seconds:
+
+| case | `-mattr=-mai-insts` | geometry 512 | delta |
+| --- | --- | --- | --- |
+| `5eq_rk3_weno3_hll` | 50.93 | 51.23 | +0.60% |
+| `5eq_rk3_weno3_hllc` | 50.19 | 50.99 | +1.58% |
+| `5eq_rk3_weno3_lf` | 50.27 | 50.87 | +1.19% |
+| `hypo_hll` | 87.22 | 88.14 | +1.06% |
+| `igr` | 17.93 | 18.07 | +0.78% |
+| `viscous_weno5_sgb_acoustic` | 52.56 | 52.92 | +0.70% |
+| **total** | **309.10** | **312.23** | **+1.01%** |
+
+Geometry-512 is consistently ~1% *slower*, all six cases, same direction. Single runs with
+no repeats, but the sign is uniform.
+
+**So `-mai-insts` is what we ship**, and it is also the simpler option — no source change to
+the two bubble kernels. Recorded because the register-pressure reasoning is sound and still
+predicted the wrong winner: static scratch counts did not translate into runtime.
+
+If the geometry workaround is used anyway, use **512, not 1024** — 1,512 needs no scratch
+while 1,1024 spills 238 ops for ~27% more instructions.
 
 ## Trigger
 
@@ -260,9 +285,25 @@ Applied to just those two loops, **MFC builds clean on CCE 21.0.2 under both `--
 This is the first CCE newer than 19.0.0 to link this code at all.
 
 The cost is confined to two kernels that only run for bubble cases with adaptive `dt`:
-forcing 1024-thread workgroups lowers their per-thread register budget and trades AGPR
-storage for scratch traffic. It is a workaround for a compiler defect, not a tuning choice,
-and should be reverted once the gate is fixed upstream.
+forcing a larger workgroup lowers their per-thread register budget and trades AGPR storage
+for scratch traffic. It is a workaround for a compiler defect, not a tuning choice, and
+should be reverted once the gate is fixed upstream.
+
+**Two corrections to the snippet above, both measured after it was written.**
+
+*Use 512, not 1024.* At `1,512` the reduced module needs **no scratch at all**; at `1,1024`
+it spills 238 scratch ops for ~27% more instructions. 1024 was chosen for margin after 320
+failed, without testing the value in between.
+
+*And this is not actually the configuration we ship.* Benchmarked head to head against
+`-mattr=-mai-insts` on the same tree (table under "Cost of the workgroup-size workaround"),
+the geometry workaround is **~1% slower across all six benchmark cases**. The
+register-pressure argument predicted the opposite and was wrong: confining the penalty to
+2 kernels out of 453 did not translate into runtime. MFC ships `-mai-insts`.
+
+The source-level form remains the better answer *in principle* — it needs no `-plugin-opt`
+injection, for which no supported path exists — so it is kept here as the portable
+workaround. But anyone choosing between them on performance should choose `-mai-insts`.
 
 ## Reproducing
 
