@@ -9,6 +9,6 @@ program atomupd
         !$acc atomic update
         count = count + 1
     end do
-    write (*, '(a,i0,a,i0,a)') 'omp tofrom+update  : count=', count, ' of ', n, &
+    write (*, '(a,i0,a,i0,a)') 'acc copy+update    : count=', count, ' of ', n, &
         merge('   PASS', '   FAIL', count == n)
 end program atomupd

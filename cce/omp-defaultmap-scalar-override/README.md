@@ -121,6 +121,21 @@ Reading the matrix:
 * Note the failing rows collapse to a **single** distinct index across all 4096
   iterations, which is worse than the conforming firstprivate default (256).
 
+### `atomic update` is unaffected — it is `atomic capture` that breaks
+
+The `*_update` variants drop the capture and keep only the increment, on a scalar
+mapped `tofrom` with no `defaultmap` clause. Both are correct:
+
+| variant | directive | result |
+| --- | --- | --- |
+| `atomcap_omp_update.f90` | `!$omp target ... map(tofrom:count)` + `atomic update` | `count=4096 of 4096` **PASS** |
+| `atomcap_acc_update.f90` | `!$acc parallel loop copy(count)` + `atomic update` | `count=4096 of 4096` **PASS** |
+
+So the atomic itself is fine on a shared mapped scalar under both models, and the
+total is exactly right — which rules out "the atomic is racy" as an explanation and
+localises the defect to how `defaultmap` changes the *data environment* of an
+explicitly-mapped scalar. These two are controls, not failing cases.
+
 ## 4. The kernel of it
 
 ```fortran

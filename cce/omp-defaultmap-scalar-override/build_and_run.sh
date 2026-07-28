@@ -62,6 +62,8 @@ NOTE the polarity: FAIL on the defaultmap rows is the bug REPRODUCING.  The
 'bare' row failing is expected and conforming -- it is included so the defect is
 not confused with the language default.
 
-The two *_update variants (atomic update rather than atomic capture) are extra
-controls; their results are not in the measured matrix above.
+The two *_update variants drop the capture and keep only the increment; both are
+correct (count=4096 of 4096 PASS) under OpenMP and OpenACC, which is why the
+defect is attributed to defaultmap's effect on the data environment rather than
+to the atomic.
 EOF

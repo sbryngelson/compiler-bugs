@@ -1,0 +1,80 @@
+############ 07 explicit-shape dummy -- CCE 21.0.2
+--- OpenMP (-homp)
+dummy=e  wrong=64 of 64   FAIL
+dummy=a  wrong=0 of 64   PASS
+--- OpenACC (-hacc)
+dummy=e  wrong=64 of 64   FAIL
+dummy=a  wrong=64 of 64   FAIL
+
+############ 07 explicit-shape dummy -- CCE 19.0.0 (is it a regression?)
+--- OpenMP (-homp)
+dummy=e  wrong=64 of 64   FAIL
+dummy=a  wrong=0 of 64   PASS
+--- OpenACC (-hacc)
+dummy=e  wrong=64 of 64   FAIL
+dummy=a  wrong=64 of 64   FAIL
+
+############ 07 runtime mapping evidence -- CRAY_ACC_DEBUG=2, explicit vs assumed, CCE 21
+===== OpenACC explicit
+ACC: Version 7.0 of HIP already initialized, runtime version 70226015
+ACC: Get Device 0
+ACC: Set Thread Context
+ACC: Register global 'gps' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Register global 'n_gp' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Start transfer 2 items from ../dummyshape_acc.f90:64
+ACC:       allocate 'gps(:)' (2560 bytes)
+ACC:       attach pointer 'gps (dope vector)' (72 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 3 items from ../dummyshape_acc.f90:51
+ACC:       present 'gps(:)' (2560 bytes)
+ACC:       present 'n_gp' (4 bytes)
+ACC:       already attached pointer 'gps (dope vector)' (72 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../dummyshape_acc.f90:55
+ACC:       present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Execute kernel dummyshape_$ck_L55_5 blocks:220 threads:256 async(auto) from ../dummyshape_acc.f90:55
+ACC: Start transfer 1 items from ../dummyshape_acc.f90:55
+ACC:       release present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Wait async(auto) from ../dummyshape_acc.f90:57
+ACC: Start transfer 2 items from ../dummyshape_acc.f90:57
+ACC:       dec attach ref count 'gps (dope vector)' (72 bytes)
+ACC:       release present 'gps(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+dummy=e  wrong=64 of 64   FAIL
+===== OpenACC assumed
+ACC: Version 7.0 of HIP already initialized, runtime version 70226015
+ACC: Get Device 0
+ACC: Set Thread Context
+ACC: Register global 'gps' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Register global 'n_gp' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Start transfer 2 items from ../dummyshape_acc.f90:64
+ACC:       allocate 'gps(:)' (2560 bytes)
+ACC:       attach pointer 'gps (dope vector)' (72 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 3 items from ../dummyshape_acc.f90:51
+ACC:       present 'gps(:)' (2560 bytes)
+ACC:       present 'n_gp' (4 bytes)
+ACC:       already attached pointer 'gps (dope vector)' (72 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../dummyshape_acc.f90:53
+ACC:       present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Execute kernel dummyshape_$ck_L53_4_cce$noloop$form blocks:1 threads:256 async(auto) from ../dummyshape_acc.f90:53
+ACC: Start transfer 1 items from ../dummyshape_acc.f90:53
+ACC:       release present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Wait async(auto) from ../dummyshape_acc.f90:57
+ACC: Start transfer 2 items from ../dummyshape_acc.f90:57
+ACC:       dec attach ref count 'gps (dope vector)' (72 bytes)
+ACC:       release present 'gps(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+dummy=a  wrong=64 of 64   FAIL
+
+############ atomcap *_update variants -- the unmeasured rows, CCE 21.0.2
+--- atomcap_omp_update
+omp tofrom+update  : count=4096 of 4096   PASS
+--- atomcap_acc_update
+omp tofrom+update  : count=4096 of 4096   PASS
+############ DONE

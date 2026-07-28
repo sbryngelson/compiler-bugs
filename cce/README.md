@@ -16,6 +16,7 @@ target (`-homp`); both are affected unless noted.
 | [`lld-agpr-mfma-assert`](lld-agpr-mfma-assert) | `lld`/`llc` asserts in `AMDGPU Rewrite AGPR-Copy-MFMA` | 21.0.0, 21.0.2 | build blocker | LLVM IR, `llc` |
 | [`promote-alloca-dropped-store`](promote-alloca-dropped-store) | Dynamically-indexed store into a 1-based private array is **silently discarded** | 21.0.2 | **wrong answers** | **Fortran, 24 lines** |
 | [`omp-defaultmap-scalar-override`](omp-defaultmap-scalar-override) | Explicit `map(to:)` on a scalar overridden by `defaultmap(...:scalar)`; `atomic capture` then hands out duplicate indices | 21.0.2 | **wrong answers** | **Fortran, 30 lines** |
+| [`explicit-shape-dummy-lost-writes`](explicit-shape-dummy-lost-writes) | Device writes through an **explicit-shape** dummy with a runtime extent are lost; assumed-shape is correct | 19.0.0 **and** 21.0.2 | **wrong answers** | **Fortran, 2 files** |
 | [`private-flat-pointer`](private-flat-pointer) | Flat pointer built from a private offset without the aperture; frame offset 0 stores 4 GiB out of bounds | 19.0.0 **and** 21.0.2 | crash | LLVM IR, 15 lines |
 | [`lld-infer-address-spaces-cce20`](lld-infer-address-spaces-cce20) | `lld` corrupts the heap in `Infer address spaces` | 20.0.2 | build blocker | whole-program bitcode, `lld` |
 | [`contiguous-mix-dropped-stores`](contiguous-mix-dropped-stores) | Stores to a non-`CONTIGUOUS` dummy dropped when the same call also passes a `CONTIGUOUS` one | 19.x only, **fixed in 20.0.0** | **wrong answers** | Fortran, 5 files |
@@ -44,8 +45,14 @@ cce/private-flat-pointer/run.sh                     # no GPU, no modules needed
 cce/lld-infer-address-spaces-cce20/run.sh           # no GPU, no modules needed
 cce/promote-alloca-dropped-store/build_and_run.sh   # builds, prints the srun line
 cce/omp-defaultmap-scalar-override/build_and_run.sh # builds, prints the srun line
+cce/explicit-shape-dummy-lost-writes/build_and_run.sh # builds, prints the srun line
 cce/contiguous-mix-dropped-stores/build_and_run.sh  # login node, host-only code
 ```
+
+Two of these have **no good-compiler control**: `private-flat-pointer` and
+`explicit-shape-dummy-lost-writes` affect CCE 19.0.0 and 21.0.2 alike, so there is
+no version to diff against. For those, a `PASS` should raise suspicion of the
+toolchain before it raises hope of a fix.
 
 ### Why the guard exists — read this before trusting a PASS
 

@@ -1,0 +1,42 @@
+###### ACC with copy-back fixed (update self + delete)
+dummy=e  wrong=64 of 64   FAIL
+dummy=a  wrong=0 of 64   PASS
+
+###### OpenMP mapping evidence, CRAY_ACC_DEBUG=2
+===== omp explicit
+ACC: Register global 'gps' link present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Register global 'n_gp' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Start transfer 2 items from ../dummyshape.f90:51
+ACC:       allocate, copy to acc, update dope vector link 'gps(:)' (2560 bytes)
+ACC:       present 'n_gp' (4 bytes)
+ACC: End transfer (to acc 2560 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../dummyshape.f90:55
+ACC:       present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Execute kernel dummyshape_$ck_L55_17 blocks:220 threads:256 async(auto) from ../dummyshape.f90:55
+ACC: Start transfer 1 items from ../dummyshape.f90:55
+ACC:       release present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../dummyshape.f90:57
+ACC:       copy to host, free, update dope vector link 'gps(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 2560 bytes)
+dummy=e  wrong=64 of 64   FAIL
+===== omp assumed
+ACC: Register global 'gps' link present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Register global 'n_gp' present from CrayDeviceLibRegistrationWrapper.cpp:0
+ACC: Start transfer 2 items from ../dummyshape.f90:51
+ACC:       allocate, copy to acc, update dope vector link 'gps(:)' (2560 bytes)
+ACC:       present 'n_gp' (4 bytes)
+ACC: End transfer (to acc 2560 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../dummyshape.f90:53
+ACC:       present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Execute kernel dummyshape_$ck_L53_14_cce$noloop$form blocks:1 threads:256 async(auto) from ../dummyshape.f90:53
+ACC: Start transfer 1 items from ../dummyshape.f90:53
+ACC:       release present 'a(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 0 bytes)
+ACC: Start transfer 1 items from ../dummyshape.f90:57
+ACC:       copy to host, free, update dope vector link 'gps(:)' (2560 bytes)
+ACC: End transfer (to acc 0 bytes, to host 2560 bytes)
+dummy=a  wrong=0 of 64   PASS
+###### DONE
