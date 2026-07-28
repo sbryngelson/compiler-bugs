@@ -137,3 +137,51 @@ That is a defect in the test, not in the compiler. An earlier draft of this
 reproducer had it, and it made OpenACC look broken for both shapes. Fixed here; the
 OpenACC rows in the table above are from the fixed version. See
 `results/run-acc-fixed-and-mapping-evidence.txt`.
+
+---
+
+## OpenACC control, corrected — the asymmetry is now established
+
+The `dummyshape_acc.f90` in this directory fails on **both** arms, so it cannot serve as a
+control: a reproducer whose control also fails proves nothing about the OpenMP path. The cause
+is double mapping, not the defect under test:
+
+```fortran
+!$acc declare create(gps, n_gp)    ! device descriptor created at module scope,
+                                   ! before the allocatable has an extent
+allocate (gps(n_gp))
+!$acc enter data copyin(gps, n_gp) ! finds gps already present -> transfers nothing
+```
+
+`declare create` on an allocatable establishes the descriptor before there is a shape; the
+later `enter data copyin` sees it present and moves no data. Neither arm ever exercised the
+resident-array path.
+
+`dummyshape_acc_fixed.f90` keeps `declare create` for the **scalar only** and maps the array
+**once, after allocation**:
+
+```fortran
+!$acc declare create(n_gp)
+...
+allocate (gps(n_gp))
+!$acc update device(n_gp)
+!$acc enter data copyin(gps)
+```
+
+Measured on Frontier, CCE 21.0.2 / ROCm 7.2.0, gfx90a (`results/run-acc-control-fixed.txt`):
+
+| model | dummy | wrong | result |
+|---|---|---|---|
+| OpenACC | `dimension(:)` | 0 / 64 | PASS |
+| OpenACC | `dimension(n_gp)` | 0 / 64 | **PASS** |
+| OpenMP | `dimension(:)` | 0 / 64 | PASS |
+| OpenMP | `dimension(n_gp)` | **64 / 64** | **FAIL** |
+
+With a working control, the defect is **OpenMP-only**: the same source construct, the same
+compiler, the same hardware, correct under OpenACC and silently wrong under OpenMP. That is
+what makes this reportable to HPE — without the OpenACC row it is merely "explicit-shape
+dummies are unreliable", which invites the response that the code should use assumed-shape.
+
+Worth recording as a general trap: an offload-model comparison is only evidence if the control
+arm passes. Two separate reproducers in this investigation were invalidated by controls that
+failed for reasons unrelated to the defect being tested.

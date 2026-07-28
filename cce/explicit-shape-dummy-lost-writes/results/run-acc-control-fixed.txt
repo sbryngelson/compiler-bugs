@@ -1,0 +1,13 @@
+Cray Fortran : Target is x86-64 : x86-trento : none : amdgcn-gfx90a
+Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)
+=== build OpenACC control v2 ===
+  build rc=0
+--- acc, dummy=assumed ---
+dummy=a  wrong=0 of 64   PASS
+--- acc, dummy=explicit ---
+dummy=e  wrong=0 of 64   PASS
+=== OpenMP arm for comparison ===
+--- omp, dummy=assumed ---
+dummy=a  wrong=0 of 64   PASS
+--- omp, dummy=explicit ---
+dummy=e  wrong=64 of 64   FAIL
