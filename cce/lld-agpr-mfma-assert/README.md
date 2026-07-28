@@ -10,7 +10,7 @@ for a report).**
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed — `lld` itself asks for a report at https://support.hpe.com/ |
+| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending; `lld` itself asks for a report at https://support.hpe.com/ |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) — blocks moving Frontier off `cce/19.0.0` |
 | Related | [`../lld-infer-address-spaces-cce20`](../lld-infer-address-spaces-cce20) (same class, CCE 20.x), [`../contiguous-mix-dropped-stores`](../contiguous-mix-dropped-stores) (why staying on 19.0.0 is also unsafe), [`../mir-roundtrip-bb-name`](../mir-roundtrip-bb-name) (hit while reducing this) |
 | Source | MFC [#1679](https://github.com/MFlowCode/MFC/pull/1679) build; reduced repro in `repro/` |

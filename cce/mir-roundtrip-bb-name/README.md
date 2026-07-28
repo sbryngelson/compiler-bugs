@@ -6,7 +6,7 @@
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed |
+| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) (context) |
 | Found while | reducing [`../lld-agpr-mfma-assert`](../lld-agpr-mfma-assert) |
 ## Symptom

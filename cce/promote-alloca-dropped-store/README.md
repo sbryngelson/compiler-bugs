@@ -19,7 +19,7 @@ to 1.5e-04 relative — in both cases with no error of any kind.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed |
+| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) — blocks moving Frontier off `cce/19.0.0` |
 | Related | [`../private-flat-pointer`](../private-flat-pointer) (also private-array lowering), [`../lld-agpr-mfma-assert`](../lld-agpr-mfma-assert) (the build blocker on the same CCE) |
 

@@ -21,7 +21,7 @@ A private variable has no business in the present table at all.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed |
+| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
 | Related | [`../05-omp-atomic-capture-scalar`](../05-omp-atomic-capture-scalar), [`../11-defaultmap-zeroes-resident-arrays`](../11-defaultmap-zeroes-resident-arrays) — very likely the same defect |
 

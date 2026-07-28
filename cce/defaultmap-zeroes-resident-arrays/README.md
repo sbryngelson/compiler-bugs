@@ -15,7 +15,7 @@ same loop reads the correct values.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed |
+| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
 | Related | [`../omp-defaultmap-scalar-override`](../omp-defaultmap-scalar-override) — very likely the same underlying defect, see below. [`../explicit-shape-dummy-lost-writes`](../explicit-shape-dummy-lost-writes) — the crash this one chains into. |
 

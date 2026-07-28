@@ -14,7 +14,7 @@ no GPU kernel — but the `craype-accel-amd-gfx90a` target module must be loaded
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed — **fixed in CCE 20.0.0**, see Versions |
+| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending; **fixed in CCE 20.0.0**, see Versions |
 | Source | MFC [#1679](https://github.com/MFlowCode/MFC/pull/1679) |
 
 ## Symptom

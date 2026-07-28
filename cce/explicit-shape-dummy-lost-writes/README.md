@@ -16,7 +16,7 @@ identical program under OpenACC.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed |
+| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
 | Related | [`../defaultmap-zeroes-resident-arrays`](../defaultmap-zeroes-resident-arrays) — in the application these two chain: a `defaultmap` clause makes the marker array read empty, the ghost-point count returns 0, and the zero-length allocation is what this defect's explicit-shape dummy then receives |
 
