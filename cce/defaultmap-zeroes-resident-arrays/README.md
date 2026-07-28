@@ -25,9 +25,9 @@ same loop reads the correct values.
 | --- | --- |
 | `resident_bare.f90` | **Baseline.** Bare `target teams distribute parallel do`. All three arrays read correctly. |
 | `resident_defaultmap.f90` | **The reproducer.** Identical, plus three `defaultmap` clauses. All three read zero. |
-| `dtptr_aggonly.f90` | Bisect: `defaultmap(tofrom:aggregate)` alone. |
-| `dtptr_allocOnly.f90` | Bisect: `defaultmap(present:allocatable)` alone. |
-| `dtptr_ptronly.f90` | Bisect: `defaultmap(present:pointer)` alone. |
+| `resident_agg_only.f90` | Bisect: `defaultmap(tofrom:aggregate)` alone. |
+| `resident_alloc_only.f90` | Bisect: `defaultmap(present:allocatable)` alone. |
+| `resident_ptr_only.f90` | Bisect: `defaultmap(present:pointer)` alone. |
 | `control_negative_bounds.f90` | Negative control — negative lower bounds are **not** the trigger. |
 | `control_named_exit.f90` | Negative control — a named multi-level `exit` is **not** the trigger. |
 | `results/` | Captured runs. |
@@ -36,6 +36,12 @@ Each program allocates three arrays — a derived-type **pointer** component, a
 derived-type **allocatable** component, and a **bare module array** — fills the
 same cells in each on the host, and counts non-zeros twice: once on the host and
 once in a device loop. Correct behaviour is `host == device`.
+
+
+> **Note on `results/`:** the captured runs pre-date a rename and refer to the
+> bisect variants by their original names. `dtptr_aggonly` = `resident_agg_only`,
+> `dtptr_allocOnly` = `resident_alloc_only`, `dtptr_ptronly` = `resident_ptr_only`.
+> The outputs are left exactly as captured rather than edited to match.
 
 ## 2. Reproduce
 

@@ -15,7 +15,7 @@ echo "== environment (want CCE $WANT)"
 guard_ftn "$WANT"
 guard_accel
 
-PROGS="resident_bare resident_defaultmap dtptr_aggonly dtptr_allocOnly dtptr_ptronly
+PROGS="resident_bare resident_defaultmap resident_agg_only resident_alloc_only resident_ptr_only
        control_negative_bounds control_named_exit"
 
 echo
@@ -47,9 +47,9 @@ Expected on CCE 21.0.2 (measured; see README and results/run-verified.txt):
 
     resident_bare             host=982 device=982   PASS  <- baseline, no clause
     resident_defaultmap       host=982 device=0     FAIL  <- THE DEFECT
-    dtptr_aggonly             host=982 device=0     FAIL  <- each clause alone
-    dtptr_allocOnly           host=982 device=0     FAIL     is sufficient
-    dtptr_ptronly             host=982 device=0     FAIL
+    resident_agg_only             host=982 device=0     FAIL  <- each clause alone
+    resident_alloc_only           host=982 device=0     FAIL     is sufficient
+    resident_ptr_only             host=982 device=0     FAIL
     control_negative_bounds   host=170 device=170   PASS  <- not the trigger
     control_named_exit        host=3684 device=3684 PASS  <- not the trigger
 

@@ -7,7 +7,7 @@
 ! real values. A plain module allocatable in the same position works.
 !
 ! Arms: pointer component vs allocatable component vs bare module array.
-module m_dt
+module m_resident
     implicit none
     integer, parameter :: n = 16
     type :: sf_ptr_t
@@ -20,10 +20,10 @@ module m_dt
     type(sf_alloc_t) :: dalloc
     integer, allocatable :: bare(:, :, :)
     !$omp declare target(dptr, dalloc, bare)
-end module m_dt
+end module m_resident
 
-program dtptr
-    use m_dt
+program resident
+    use m_resident
     implicit none
     integer :: i, j, k, h1, d1, h2, d2, h3, d3
     allocate (dptr%sf(-2:n + 2, -2:n + 2, -2:n + 2))
@@ -42,7 +42,7 @@ program dtptr
     !$omp target update to(dptr%sf, dalloc%sf, bare)
 
     d1 = 0
-    !$omp target teams distribute parallel do defaultmap(tofrom:aggregate) collapse(3) map(tofrom: d1)
+    !$omp target teams distribute parallel do defaultmap(present:allocatable) collapse(3) map(tofrom: d1)
     do k = 0, n; do j = 0, n; do i = 0, n
         if (dptr%sf(i, j, k) /= 0) then
             !$omp atomic update
@@ -50,7 +50,7 @@ program dtptr
         end if
     end do; end do; end do
     d2 = 0
-    !$omp target teams distribute parallel do defaultmap(tofrom:aggregate) collapse(3) map(tofrom: d2)
+    !$omp target teams distribute parallel do defaultmap(present:allocatable) collapse(3) map(tofrom: d2)
     do k = 0, n; do j = 0, n; do i = 0, n
         if (dalloc%sf(i, j, k) /= 0) then
             !$omp atomic update
@@ -58,7 +58,7 @@ program dtptr
         end if
     end do; end do; end do
     d3 = 0
-    !$omp target teams distribute parallel do defaultmap(tofrom:aggregate) collapse(3) map(tofrom: d3)
+    !$omp target teams distribute parallel do defaultmap(present:allocatable) collapse(3) map(tofrom: d3)
     do k = 0, n; do j = 0, n; do i = 0, n
         if (bare(i, j, k) /= 0) then
             !$omp atomic update
@@ -69,4 +69,4 @@ program dtptr
     write (*, '(a,i0,a,i0,a)') 'pointer-component    host=', h1, ' device=', d1, merge('   PASS', '   FAIL', h1 == d1)
     write (*, '(a,i0,a,i0,a)') 'allocatable-component host=', h2, ' device=', d2, merge('   PASS', '   FAIL', h2 == d2)
     write (*, '(a,i0,a,i0,a)') 'bare module array    host=', h3, ' device=', d3, merge('   PASS', '   FAIL', h3 == d3)
-end program dtptr
+end program resident
