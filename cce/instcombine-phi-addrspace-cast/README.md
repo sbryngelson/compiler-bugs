@@ -173,3 +173,63 @@ inlined leaf `!DIR$ INLINENEVER` so the PHI never forms — does not work: CCE 2
 accepts the directive and then emits the routine with `alwaysinline` anyway. See
 `cce/inlinenever-ignored-device` (MFC-side copy: `cce21-bugs/14-...`). That defect is
 what forces a flag-based workaround for this one.
+
+## 7. Root cause: CCE materialises the same device global in two address spaces
+
+The two address spaces do not come from the application. **CCE emits two different load
+forms for the same device global within a single function**, and GVN then legitimately
+unifies them.
+
+Both of these appear in one function, for the same symbol:
+
+```llvm
+; generic form — addrspacecast to flat, later laundered back with ptrtoint/inttoptr
+%r144.i   = load ptr,              ptr addrspacecast (ptr addrspace(1) @fd_coeff_z__cray_acc to ptr), align 8
+
+; global form — loaded directly in addrspace(1)
+%r929.pre = load ptr addrspace(1), ptr addrspace(1) @fd_coeff_z__cray_acc, align 32
+```
+
+It is not isolated to one symbol. Counting both forms per module array in the same
+function:
+
+| global | `addrspacecast`-to-generic loads | direct `addrspace(1)` loads |
+| --- | --- | --- |
+| `fd_coeff_x` | 8 | 5 |
+| `fd_coeff_y` | 8 | 5 |
+| `fd_coeff_z` | 8 | 6 |
+
+The generic-form value is then round-tripped back to global:
+
+```llvm
+%307 = ptrtoint ptr %r144.i to i64
+%308 = inttoptr i64 %307 to ptr addrspace(1)
+```
+
+There are 69 such `inttoptr` in this one function.
+
+**The chain.** Same address, two types → GVN unifies the loads and builds a PHI whose
+incoming values are `ptr` and `ptr addrspace(1)` → `foldIntegerTypedPHI` (which exists
+precisely to fold PHIs feeding `inttoptr`) tries to reconcile them → `bitcast` across
+address spaces → assert.
+
+This makes the defect a **front-end inconsistency feeding a mid-end fold**, not an
+application pattern. Using `addrspacecast` rather than `inttoptr(ptrtoint(...))` for the
+conversion, or emitting one consistent load form per global, would each break the chain.
+Compare [LLVM #33896](https://github.com/llvm/llvm-project/issues/33896) — "InstCombine
+cannot blindly assume `inttoptr(ptrtoint x) -> x`".
+
+### Why this matters for triage
+
+**There is no source-level workaround, and this is why.** Three were tried in the
+application and all failed, consistently with the above:
+
+| attempt | outcome |
+| --- | --- |
+| `!DIR$ INLINENEVER` on the inlined leaf | no effect — see [`../inlinenever-ignored-device`](../inlinenever-ignored-device) |
+| hoist the duplicated load out of the branch | crash moves to the next of 5 equivalent sites in the routine |
+| change the routine's interface to avoid derived-type pointer components | **hypothesis refuted** — the pointer is `fd_coeff_z` itself, not a `%sf` component |
+
+No Fortran construct selects which load form the front end emits for a module array, so
+no source change removes the mixed-address-space PHI. That leaves the plugin flags in §4
+until this is fixed in the compiler.
