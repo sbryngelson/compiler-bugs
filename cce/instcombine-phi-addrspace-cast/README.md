@@ -110,3 +110,66 @@ tools are different LLVM versions and do not reproduce it.
 One trap: key the `llvm-reduce` interestingness test on the assertion text, not on a
 symbolized stack frame. `foldIntegerTypedPHI` does not always resolve in the dump, so
 a test that greps for it rejects the unreduced input as "not interesting".
+
+## 6. Where the PHI comes from — GVN PRE — and the O1/O2 boundary
+
+Independent reduction from the same application, arriving at the same defect from the
+module level rather than the function level. Two facts that the minimal `.ll` cannot
+show, because they are about *how the input IR is produced*:
+
+**The PHI is created by GVN's partial-redundancy elimination.** Dumping the IR
+immediately before the crashing pass shows the offending value with GVN's `.pre`
+suffix:
+
+```console
+$ opt -mcpu=gfx90a -mattr=-mai-insts -passes='lto<O2>' \
+      -print-before=instcombine -filter-print-funcs='s_compute_ib_forces$m_ibm_$ck_L1008_11' \
+      simulation-cce-openmp-pre-llc.bc -o /dev/null
+...
+%r929 = phi ptr addrspace(1) [ %308, %"...m_viscous.fpp, line 1287, bb30.i" ],
+                             [ %308, %", bb46.i" ],
+                             [ %r929.pre, %"ipa_lb..." ]
+```
+
+The incoming blocks are attributed to the *callee* source file, so this is
+post-inlining: the leaf is inlined into the kernel, GVN then hoists a redundant
+global-pointer load across the `if (any_non_newtonian)` merge, and the resulting
+`ptr addrspace(1)` PHI is what the fold mishandles.
+
+**The pipeline boundary corroborates it.** Replaying the LTO pipeline at each level
+on the unreduced module:
+
+| pipeline | result |
+| --- | --- |
+| `lto<O0>` | clean |
+| `lto<O1>` | clean |
+| **`lto<O2>`** | **assert** |
+
+GVN is an O2-only addition, which is consistent with it being the producer.
+
+**Ruled out** — each still asserts, so none of these is the mechanism, and none is a
+usable workaround:
+
+| flag | result |
+| --- | --- |
+| `-vectorize-slp=false` | still asserts |
+| `-vectorize-loops=false` | still asserts |
+| `-disable-promote-alloca-to-vector` | still asserts |
+
+That last row matters for this application specifically: the shipped Frontier
+configuration already carries `-disable-promote-alloca-to-vector` and
+`-mattr=-mai-insts` for two unrelated defects, and the crash line in the build log
+shows both present. This is a third, independent bug.
+
+**Consequence for §4.** `-plugin-opt=O1` is a second workaround with the opposite
+trade to `-instcombine-max-num-phis=0`: it is not partial — removing GVN removes the
+producer, so no kernel can reach the fold — but it drops the whole device LTO
+pipeline rather than one fold's walk limit. Neither has a measured performance
+number yet. The narrow flag with a filed vendor bug is the better default; O1 is the
+fallback if another kernel turns up that the narrow flag misses.
+
+**Why the source-level fix is unavailable here.** The natural narrow fix — mark the
+inlined leaf `!DIR$ INLINENEVER` so the PHI never forms — does not work: CCE 21
+accepts the directive and then emits the routine with `alwaysinline` anyway. See
+`cce/inlinenever-ignored-device` (MFC-side copy: `cce21-bugs/14-...`). That defect is
+what forces a flag-based workaround for this one.

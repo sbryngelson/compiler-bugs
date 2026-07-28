@@ -1,0 +1,15 @@
+Cray Fortran : Target is x86-64 : x86-trento : none : amdgcn-gfx90a
+Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)
+=== build ===
+ftn-855 ftn: ERROR M, File = ptrattach.f90, Line = 11, Column = 8 
+ftn-100 ftn: ERROR M, File = ptrattach.f90, Line = 18, Column = 1 
+ftn-100 ftn: ERROR M, File = ptrattach.f90, Line = 20, Column = 1 
+ftn-855 ftn: ERROR M, File = ptrattach.f90, Line = 11, Column = 8 
+ftn-100 ftn: ERROR M, File = ptrattach.f90, Line = 18, Column = 1 
+ftn-1077 ftn: WARNING M, File = ptrattach.f90, Line = 19, Column = 11 
+=== A = two separate maps (what MFC's ACC_SETUP_SFs emits) ===
+  omp [2026-07-28T08:46:39.367] error: execve(): /lustre/orion/cfd154/scratch/sbryngelson/compiler-bugs-repo/cce/ptr-component-attach/./ptr_omp: No such file or directory
+  acc srun: Terminating StepId=5105426.1
+=== B = one map with both objects (candidate workaround) ===
+  omp srun: Terminating StepId=5105426.2
+  acc srun: Terminating StepId=5105426.3
