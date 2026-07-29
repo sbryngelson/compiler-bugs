@@ -1,5 +1,9 @@
 # Cray CCE 21.0.2 (LLVM 21.1.8): `llc` emits MIR its own parser cannot read
 
+> **Severity:** Tooling only — blocks MIR-level bug reduction, no effect on generated code  
+> **Fix belongs to:** **upstream LLVM** — reproduces on LLVM 22 as well as CCE 21  
+> **Status:** Root-caused and reduced to a 14-line `.ll`. The MIR printer emits block names unquoted.
+
 **Status: confirmed. Minor severity — blocks MIR-level debugging, not builds.**
 
 ## Tracking
@@ -50,3 +54,50 @@ serialisation.
 `repro/run.sh <module.bc>` on any Cray-Fortran-derived AMDGPU module with such block names;
 `repro/bad_label_excerpt.txt` is the emitted text. A reduced input is in
 `../cce21-lld-agpr-mfma-assert/repro/crashing_function.bc`.
+
+
+## Root cause and minimal reproducer
+
+`bb-comma-name.ll` (14 lines) names two basic blocks the way CCE's Fortran front end does —
+`", bb71"` and `"file f.f90, line 12, bb99"`. The MIR printer emits the name after `bb.N.`
+**unquoted**:
+
+```
+  bb.1., bb71:
+    successors: %bb.2(0x80000000)
+```
+
+The MIR *parser* then stops at the comma:
+
+```
+error: m_CCE21.mir:170:8: expected ':'
+```
+
+`llc` cannot read back what `llc` just wrote.
+
+## This is an upstream LLVM defect, not a Cray one
+
+Run `./run.sh`:
+
+| toolchain | emitted label | re-parse |
+| --- | --- | --- |
+| CCE 21.0.2 (LLVM 21.1.8) | `bb.1., bb71:` | **fails** — `expected ':'` |
+| **ROCm 7.2.0 (LLVM 22.0.0)** | `bb.1., bb71:` | **fails** — `expected ':'` |
+
+Byte-identical malformed output from stock LLVM 22. So unlike the other entries here, there is
+nothing for HPE to backport and nothing CCE-specific to fix — this should be reported
+**upstream to LLVM**. CCE only makes it *likely* to be hit, because its Fortran front end names
+blocks with embedded commas (`file <name>, line <n>, bb<k>`); any front end that does so will
+trip it.
+
+## Why it matters despite being "tooling only"
+
+It blocks `llc -stop-before` / `-start-before` MIR round-tripping, which is the standard way to
+reduce a backend bug to a MIR test case. That is exactly the technique that would otherwise have
+been used on [`../lld-agpr-mfma-assert`](../lld-agpr-mfma-assert) — a `SlotIndex` assertion deep
+in register allocation, where a MIR-level reduction is the natural next step. It had to be
+reduced at the IR level instead.
+
+**Workaround:** quote the name, or rename the blocks before reduction (`opt -metarenamer`, or
+strip names with `opt -strip`), at the cost of losing the source correlation that makes the
+reduction readable.
