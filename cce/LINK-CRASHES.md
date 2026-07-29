@@ -118,6 +118,18 @@ Verified against CCE 21.0.2's own base, `llvmorg-21.1.8`
 The first two predate CCE 21.0.2's merge cutoff, so they are **missed backports** rather
 than fixes that did not exist yet. The third postdates it.
 
+**But absence of the fix is not the same as presence of the bug.** Tested against stock
+`llvmorg-21.1.8` built with assertions on:
+
+| defect | stock 21.1.8 behaviour | reading |
+| --- | --- | --- |
+| #2 InstCombine invalid cast | **asserts**, same as CCE | genuine upstream defect; backport is the whole ask |
+| #1 AGPR dead valno | **clean**, even at max register pressure | the valno is introduced Cray-side; the missing guard is latent upstream |
+
+So for #1 the vendor ask is *two* things — the CCE-side allocation that creates a dead/PHI
+valno, plus the upstream guard that would make it harmless — not "you missed a backport".
+See that entry for the wording. Claiming upstream reproduces #1 would be false.
+
 Run that check from inside the clone — `llvm-src/llvm-project`, not its parent. Run from the
 wrong directory and `--is-ancestor` returns nonzero because the commit cannot be resolved at
 all, which reads exactly like "absent" and is not evidence of anything.

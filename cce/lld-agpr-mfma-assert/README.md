@@ -680,3 +680,78 @@ Two things gate this from being a recommendation:
    grind comparison used for the `-mai-insts` cost.
 
 Neither is a reason to prefer `-mai-insts`; both are reasons not to quote a number yet.
+
+## Tested against stock LLVM 21.1.8 with assertions — the backport claim does NOT hold up
+
+Everything above concluded that this is a missed backport of `30007a541493`. That conclusion
+was reached by reading the upstream diff and confirming the guard is absent from CCE's
+21.1.8 base. It was never tested, because no assertions-enabled stock LLVM was available —
+ROCm's builds have assertions compiled out, so their clean runs prove nothing.
+
+One has now been built: stock **`llvmorg-21.1.8`** (CCE 21.0.2's exact base),
+`-DLLVM_ENABLE_ASSERTIONS=ON`, at
+`/lustre/orion/cfd154/scratch/sbryngelson/llvm-src/build-2118/bin/{llc,opt}`.
+
+Result on the real `repro/crashing_function.bc`, same `llc` invocation that makes CCE assert:
+
+| compiler | assertions | result |
+| --- | --- | --- |
+| CCE 21.0.2 `llc` (LLVM 21.1.8 + Cray) | yes | **assert**, `SlotIndexes.h:96` |
+| stock `llvmorg-21.1.8` `llc` | yes | **clean** |
+| stock 21.1.8 + the 3-line guard | yes | clean (uninformative — baseline never crashed) |
+
+Controls confirming the stock run genuinely exercised the pass, rather than skipping it:
+
+- `-debug-pass=Structure` shows `AMDGPU Rewrite AGPR-Copy-MFMA` scheduled, and the pass
+  pipelines of the two compilers are **identical** line-for-line around it.
+- The stock build allocates AGPRs — `agpr_count=132`, 450 `accvgpr` instructions — so
+  `isPhysRegUsed(AGPR0)`, the pass's early-exit gate, is satisfied.
+
+And it is not merely a luckier allocation. Forcing maximum register pressure via the same
+attributes that flip the crash on CCE leaves stock 21.1.8 clean:
+
+| stock 21.1.8, module patched with | result |
+| --- | --- |
+| *(unmodified)* | clean |
+| `amdgpu-waves-per-eu="1,1"` | clean |
+| `amdgpu-waves-per-eu="2,2"` | clean |
+| `amdgpu-flat-work-group-size="1,64"` | clean |
+
+### What this means
+
+The dead or PHI-def value number that trips the assert **originates in Cray's register
+allocation**, not upstream's. Upstream 21.1.8 compiles this module without ever producing
+one, so the missing guard is latent there and cannot be demonstrated as a defect.
+
+So the correct statement of the bug has two halves, and the earlier one-line version was
+wrong:
+
+1. **Cray-side (the trigger).** CCE's allocator produces a value number that is dead or a
+   PHI def where upstream's does not. This is the part that only CCE exhibits.
+2. **Upstream (the fragility).** `AMDGPURewriteAGPRCopyMFMA` dereferences `VNI->def`
+   without checking `isUnused()`/`isPHIDef()`. `30007a541493` adds that check. Absent from
+   21.1.8, present from LLVM 22 on.
+
+`30007a541493` is therefore still worth backporting — it is precisely the guard for the
+valnos that crash here, and would make the Cray-side trigger harmless — but calling it *the
+fix* overstates the evidence. **We have not shown that upstream 21.1.8 has this bug, and we
+cannot test the guard against CCE's LLVM**, whose source we do not have.
+
+### For the vendor report
+
+Ask for both halves, and do not claim upstream reproduces it:
+
+> CCE 21.0.2 asserts in `AMDGPU Rewrite AGPR-Copy-MFMA` at `SlotIndexes.h:96`. Stock
+> `llvmorg-21.1.8` with assertions enabled compiles the same module cleanly, with the same
+> pass pipeline and with AGPRs allocated, and stays clean when pushed to maximum register
+> pressure — so the dead/PHI valno appears to be introduced by CCE-specific register
+> allocation. Separately, upstream commit `30007a541493` (llvm#153915, 2025-08-16) adds the
+> `isUnused()`/`isPHIDef()` guard that would make such a valno harmless; it is absent from
+> 21.1.8 and would be worth carrying regardless of where the valno comes from.
+
+### Reproducing this comparison
+
+`joblogs/resume_llvm2118.sh` builds the tree and runs both probes; it is idempotent and
+refuses to report anything if assertions came out off. Note it must run somewhere without a
+wall-clock limit — extracting 160,105 files onto Lustre outlasted a 2-hour batch job's early
+phase.

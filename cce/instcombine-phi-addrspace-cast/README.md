@@ -326,3 +326,19 @@ Upstream does not merely fail to notice a bad fold — it never performs it, and
 produces is valid. That, together with the source inspection above showing the upstream code
 is already correct, is what makes this a CCE-side divergence rather than a live upstream bug.
 The original `rc=0` observation was the right conclusion reached by insufficient evidence.
+
+## Confirmed against stock LLVM 21.1.8 with assertions
+
+Unlike the AGPR entry next door, this one **does** reproduce upstream. Stock
+`llvmorg-21.1.8` built with `-DLLVM_ENABLE_ASSERTIONS=ON` (see
+`../lld-agpr-mfma-assert/README.md` for the build) asserts on `phi-addrspace.ll` exactly as
+CCE 21.0.2 does:
+
+```
+$ .../build-2118/bin/opt -passes=instcombine phi-addrspace.ll -o /dev/null
+Assertion `castIsValid(op, S, Ty) && "Invalid cast"' failed.
+```
+
+So this is a genuine upstream defect present in CCE's base, and `6d033abb71d6`
+(llvm#181064) is a straightforward missed-backport ask — no Cray-side involvement needs to be
+posited, and unlike the AGPR case the claim is now tested rather than inferred from the diff.
