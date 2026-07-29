@@ -1,15 +1,64 @@
-# CCE 21: a `defaultmap` clause makes a resident array read as zero on device
+# CCE 21: a `defaultmap` clause privatizes a scalar that carries an explicit `map(tofrom:)`
 
-**Wrong answers, no diagnostic.** An array made device-resident with
-`declare target` + `target enter data`, populated on the host and pushed with
-`target update to`, reads back as **all zeros** inside a `target` region — but
-only when the directive carries a `defaultmap` clause. Remove the clause and the
-same loop reads the correct values.
+**Silent wrong answers.** Adding any `defaultmap` clause to a `target` construct causes a
+scalar with an **explicit `map(tofrom:)` on the same directive** to be allocated in
+thread-private memory instead. Every thread updates its own copy, nothing is written back,
+and the host reads the value it started with.
 
-* **Component:** CCE 21.0.2 Fortran, OpenMP target offload, gfx90a
-* **Severity:** silent miscompilation — a conforming program reads zeros
-* **Affected:** `-homp`
-* **Version tested:** `Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)`
+The category named in the clause is **irrelevant**: `defaultmap(tofrom:aggregate)` —
+a clause about aggregates — privatizes a mapped **scalar**.
+
+```fortran
+d1 = 0
+!$omp target teams distribute parallel do collapse(3) map(tofrom: d1)      ! d1 = 982  correct
+!$omp target teams distribute parallel do defaultmap(tofrom:aggregate) &
+!$omp     defaultmap(present:allocatable) defaultmap(present:pointer) &
+!$omp     collapse(3) map(tofrom: d1)                                       ! d1 = 0    WRONG
+```
+
+The two directives differ only by the `defaultmap` clauses. `d1` is explicitly mapped in both.
+
+## Mechanism, from the device IR
+
+The counter's atomic update lands in a different address space in each arm:
+
+```llvm
+; without defaultmap -- global, the mapped d1
+%2 = atomicrmw add ptr addrspace(1) %r51, i32 1 syncscope("agent") monotonic
+
+; with defaultmap -- addrspace(5) is thread-private scratch
+%"$_pvt3_d1_t78" = alloca i32, align 4, addrspace(5)
+%2 = atomicrmw add ptr addrspace(5) %"$_pvt3_d1_t78", i32 1 syncscope("agent") monotonic
+```
+
+`addrspace(5)` is per-thread private memory. The kernel counts correctly; the result has
+nowhere to go.
+
+**The arrays are not the problem.** An earlier revision of this entry described the defect as
+"a resident array reads as all zeros inside the target region". That framing was wrong — the
+device reads the arrays correctly and the count is computed correctly. What fails is the
+*write-back of the scalar result*. Corrected after extracting the device IR and diffing the two
+arms; the runtime traces are identical apart from allocation addresses, and `CRAY_ACC_DEBUG=3`
+shows nothing amiss, because nothing is wrong with the mapping.
+
+## Relationship to `omp-defaultmap-scalar-override`
+
+This is the **same defect**, and this reproducer is the stronger statement of it. There,
+`defaultmap(...:scalar)` overrode an explicit `map(to:)` on a scalar — at least the category
+matched. Here a `defaultmap` naming only `aggregate`, `allocatable`, and `pointer` privatizes an
+explicitly-mapped scalar. The two should be triaged together.
+
+## Reproducing
+
+```console
+$ ./extract-device-ir.sh resident_bare.f90        bare_dev.ll
+$ ./extract-device-ir.sh resident_defaultmap.f90  dm_dev.ll
+$ grep -n 'atomicrmw add' bare_dev.ll dm_dev.ll     # addrspace(1) vs addrspace(5)
+$ grep -n '_pvt.*d1'      dm_dev.ll                 # the private alloca, absent in the bare arm
+```
+
+`extract-device-ir.sh` pulls the IR out of the `.cray.llvm.offloading` section;
+`-plugin-opt=save-temps` does **not** work for a direct `ftn` invocation.
 
 ## Tracking
 
