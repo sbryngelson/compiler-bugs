@@ -32,7 +32,7 @@ its own README with the full analysis; this page is only an index.
 
 | case | compiler | tracking | state |
 |---|---|---|---|
-| [cce/](cce) — 12 `!$acc declare` cases | CCE 15.0.1 | OLCFDEV-1416, CAST-31898 | reported |
+| [cce/archive/acc-declare-cce15](cce/archive/acc-declare-cce15) — 12 `!$acc declare` cases | CCE 15.0.1 | OLCFDEV-1416, CAST-31898 | **archived** — reported long ago; status on modern compilers unknown because none self-check |
 | [cce/defaultmap-firstprivate](cce/defaultmap-firstprivate) | CCE 19.0.0 | OLCFHELP-26859 | reported |
 | [cce/promote-alloca-dropped-store](cce/promote-alloca-dropped-store) | CCE 21.0.2 | filed via OLCF, case ID pending | **open, wrong answers**; a dynamically-indexed store into a **1-based** private array is silently discarded by `AMDGPUPromoteAllocaToVector` — no crash, no diagnostic. 24-line Fortran reproducer; controls isolate the lower bound of 1 as the trigger. Corrupted MFC's viscous flux by ~25% of the term |
 | [cce/omp-defaultmap-scalar-override](cce/omp-defaultmap-scalar-override) | CCE 21.0.2 | filed via OLCF, case ID pending | **open, wrong answers**; an explicit `map(to:)` on a scalar is overridden when the same directive carries `defaultmap(...:scalar)`, so `atomic capture` hands 4095 of 4096 iterations a duplicate index. `-h omp` only — the OpenACC equivalent is correct. **Distinct from `defaultmap-firstprivate` above**, which is CCE 19 and the opposite direction |

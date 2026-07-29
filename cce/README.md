@@ -210,27 +210,28 @@ module-scope variables and/or nested allocatable derived types. Bug reports:
 
 | Dir | Variable type | `declare` clause | Kernel | Issue |
 |-----|--------------|------------------|--------|-------|
-| test-bug1 | `allocatable` scalar array | `link` | `parallel loop` + `routine seq` | seq routine writing to `declare link` array called from parallel loop |
-| test-bug2 | `allocatable` array, non-zero lower bound (`-5:5`) | `link` | `parallel loop` | non-unit lower bound under `declare link` |
-| test-bug3 | nested allocatable derived type (`outer%inner(i)%data`) | none (manual `enter data`) | `kernels` | 2-level nested struct, element-wise `enter data copyin` |
-| test-bug4 | derived type with allocatable member, scalar struct | `declare create` on struct | `parallel loop` + `routine seq` | `declare create` on struct + `enter data create` on member + seq routine |
-| test-bug5 | same as test-bug3, smaller dims (ninner=2, ndat=2) | none | `kernels` | minimal 2-level nested struct reproducer |
-| test-bug6 | 2-level nested struct, outer is allocatable array | `declare link` on outer | `kernels` | 3-level loop over `outer(k)%inner(i)%data(j)` with `declare link` |
-| test-bug7 | same as test-bug6, multi-file build | `declare link` on outer | `parallel loop` + `routine seq` (multi-TU) | seq routine + present clause across separate compilation units |
-| test-bug8 | 2-level nested struct, outer is scalar | `declare create` on outer | `kernels` + `routine seq` | scalar outer struct with `declare create`, seq routine writes member |
-| test-bug9 | 2-level nested struct, outer is allocatable array | none (declare link commented out) | `kernels` | same as test-bug6 without any declare — tests manual enter data only |
-| test-bug10 | flat array of derived types (`inner(ninner)%data`) | `declare link` on inner | `kernels default(present)` + `routine seq` | element-wise `enter data` + seq routine + `default(present)` |
-| test-bug11 | 2-level nested struct, outer is allocatable array | `declare create` on outer | `kernels default(present)` | `declare create` + `default(present)` with nested struct |
-| test-bug12 | same as test-bug11 | `declare link` on outer | `kernels default(present)` | `declare link` vs `declare create` comparison for test-bug11 |
+| [test-bug1](archive/acc-declare-cce15/test-bug1) | `allocatable` scalar array | `link` | `parallel loop` + `routine seq` | seq routine writing to `declare link` array called from parallel loop |
+| [test-bug2](archive/acc-declare-cce15/test-bug2) | `allocatable` array, non-zero lower bound (`-5:5`) | `link` | `parallel loop` | non-unit lower bound under `declare link` |
+| [test-bug3](archive/acc-declare-cce15/test-bug3) | nested allocatable derived type (`outer%inner(i)%data`) | none (manual `enter data`) | `kernels` | 2-level nested struct, element-wise `enter data copyin` |
+| [test-bug4](archive/acc-declare-cce15/test-bug4) | derived type with allocatable member, scalar struct | `declare create` on struct | `parallel loop` + `routine seq` | `declare create` on struct + `enter data create` on member + seq routine |
+| [test-bug5](archive/acc-declare-cce15/test-bug5) | same as test-bug3, smaller dims (ninner=2, ndat=2) | none | `kernels` | minimal 2-level nested struct reproducer |
+| [test-bug6](archive/acc-declare-cce15/test-bug6) | 2-level nested struct, outer is allocatable array | `declare link` on outer | `kernels` | 3-level loop over `outer(k)%inner(i)%data(j)` with `declare link` |
+| [test-bug7](archive/acc-declare-cce15/test-bug7) | same as test-bug6, multi-file build | `declare link` on outer | `parallel loop` + `routine seq` (multi-TU) | seq routine + present clause across separate compilation units |
+| [test-bug8](archive/acc-declare-cce15/test-bug8) | 2-level nested struct, outer is scalar | `declare create` on outer | `kernels` + `routine seq` | scalar outer struct with `declare create`, seq routine writes member |
+| [test-bug9](archive/acc-declare-cce15/test-bug9) | 2-level nested struct, outer is allocatable array | none (declare link commented out) | `kernels` | same as test-bug6 without any declare — tests manual enter data only |
+| [test-bug10](archive/acc-declare-cce15/test-bug10) | flat array of derived types (`inner(ninner)%data`) | `declare link` on inner | `kernels default(present)` + `routine seq` | element-wise `enter data` + seq routine + `default(present)` |
+| [test-bug11](archive/acc-declare-cce15/test-bug11) | 2-level nested struct, outer is allocatable array | `declare create` on outer | `kernels default(present)` | `declare create` + `default(present)` with nested struct |
+| [test-bug12](archive/acc-declare-cce15/test-bug12) | same as test-bug11 | `declare link` on outer | `kernels default(present)` | `declare link` vs `declare create` comparison for test-bug11 |
 
 `archive/` — cases that were fixed in CCE or kept for reference (allocatable derived
 types, scalar control cases).
 
 
-## Status of the 12 `!$acc declare` cases (`test-bug1`..`test-bug12`)
+## The 12 `!$acc declare` cases — archived, see [archive/acc-declare-cce15](archive/acc-declare-cce15)
 
-These date from **CCE 15.0.1** and were reported as `OLCFDEV-1416` / `CAST-31898`. They predate
-the CCE 19->21 port work and are kept for the record.
+**Moved to [`archive/acc-declare-cce15/`](archive/acc-declare-cce15)** so they are not confused
+with the actively tracked port defects. They date from **CCE 15.0.1**, were reported as
+`OLCFDEV-1416` / `CAST-31898`, and predate the CCE 19->21 work by years.
 
 **Re-run on CCE 21.0.2 (2026-07-29): inconclusive, and the reason is a defect in the
 reproducers themselves.**
