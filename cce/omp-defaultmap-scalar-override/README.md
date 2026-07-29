@@ -12,6 +12,39 @@ the same index to nearly every iteration.
 * **Affected:** `-homp`. The OpenACC equivalent is correct.
 * **Version tested:** `Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)`
 
+
+## Same defect as `defaultmap-zeroes-resident-arrays` — shared mechanism
+
+Both are the **same underlying bug**: a `defaultmap` clause causes CCE's Fortran front end to
+copy an explicitly-mapped scalar **by value into thread-private memory**, so updates never
+reach the mapped location.
+
+Device IR signature, extracted with `../extract-device-ir.sh`:
+
+| arm | `$_pvt` allocas | atomic to `addrspace(5)` |
+| --- | --- | --- |
+| `atomcap_omp_bare` | 0 | 0 |
+| `atomcap_omp_defaultmap` | **3** | **1** |
+
+which matches `defaultmap-zeroes-resident-arrays` exactly:
+
+```llvm
+; correct -- the mapped global
+atomicrmw add ptr addrspace(1) %r51, i32 1 syncscope("agent") monotonic
+; with defaultmap -- addrspace(5) is per-thread private scratch
+%"$_pvt3_d1" = alloca i32, align 4, addrspace(5)
+atomicrmw add ptr addrspace(5) %"$_pvt3_d1", i32 1 syncscope("agent") monotonic
+```
+
+**Triage these two together — one fix should close both.** The companion entry is the stronger
+statement of the defect, because there the `defaultmap` categories are `aggregate`,
+`allocatable`, and `pointer` and it still privatizes a **scalar**; the category need not even
+match the variable it corrupts.
+
+Scope: **Fortran front end only.** The equivalent C program returns the correct answer; C uses
+the clang OpenMP lowering (`%d1.addr = alloca ptr`, by reference) rather than CCE's
+(`$_pvt` / `$ck_L`, by value).
+
 ## Tracking
 
 | Where | Link / ID |

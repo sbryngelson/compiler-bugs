@@ -17,6 +17,33 @@ A private variable has no business in the present table at all.
 * **Affected:** `-homp`, `defaultmap(present:…)` only; `tofrom` does not surface it
 * **Version tested:** `Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)`
 
+
+## Distinct from the other two `defaultmap` entries — this one is host-side
+
+It is tempting to fold this together with `defaultmap-zeroes-resident-arrays` and
+`omp-defaultmap-scalar-override`, which are one defect (a `defaultmap` clause privatizing an
+explicitly-mapped scalar). **This is a different mechanism**, and the device IR proves it.
+
+Extracted with `../extract-device-ir.sh`, all three arms are identical — same length, no
+privatization, no address-space change:
+
+| arm | lines | `$_pvt` allocas | `addrspace(5)` atomics |
+| --- | --- | --- | --- |
+| `priv_bare` | 92 | 0 | 0 |
+| `priv_defaultmap_present` | 92 | 0 | 0 |
+| `priv_defaultmap_tofrom` | 92 | 0 | 0 |
+
+The generated device code is the same with and without the clause, so nothing in codegen
+explains the abort. The failure is on the **host side**: a present-table lookup is issued for a
+variable that appears in an explicit `private()` clause, and `find_in_present_table` fails
+because a private variable was never mapped.
+
+Note the direction is the *opposite* of the other two: there, `defaultmap` privatizes something
+that should be mapped; here it maps (looks up) something that should be private. Both are
+`defaultmap` overriding an explicit clause, which is likely a common root in clause-precedence
+handling — but they are not the same code path and should not be merged on the assumption that
+one fix covers both.
+
 ## Tracking
 
 | Where | Link / ID |
