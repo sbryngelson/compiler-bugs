@@ -468,3 +468,44 @@ AGPR assert  ->  -mattr=-mai-insts  ->  AGPRs unavailable  ->  scratch spilling 
 Since LLVM 22 links this reproducer cleanly with the pass enabled, the fix exists upstream. That
 makes this the highest-value backport of the CCE 21 defects: it is the only one whose resolution
 also recovers lost performance.
+
+## Is there a narrower workaround than `-mattr=-mai-insts`?
+
+`-mattr=-mai-insts` disables MFMA/AGPR wholesale, which is why it costs 29x scratch and 61% on
+IGR. A flag that suppressed only the faulty *pass* would keep AGPRs and avoid that. **There is
+no such flag in CCE 21.0.2** — searched and tested:
+
+| attempt | result |
+| --- | --- |
+| `--amdgpu-enable-rewrite-partial-reg-uses=false` | still asserts (`SlotIndexes.h:96`) |
+| `--amdgpu-spill-vgpr-to-agpr=false` | still asserts |
+| a pass-level disable flag | **does not exist** in this build — `llc --help-hidden` exposes no `rewrite-agpr` / `copy-mfma` option |
+| the pass's debug counter | added upstream by [llvm#189437](https://github.com/llvm/llvm-project/pull/189437) on 2026-04-10, **after** CCE 21.0.2's 2025-12-12 merge cutoff |
+
+So on this compiler the only lever is the `-mattr` one, and its cost is unavoidable. That is
+worth stating explicitly, because "just disable the pass" is the obvious first suggestion and it
+is not available here.
+
+It also sharpens the ask: **the value of fixing this is not merely that MFC links.** It is that
+the fix is the only path to removing a workaround that currently costs 61% on the most
+register-hungry kernel in the application. Backporting the LLVM 22 behaviour — or, failing that,
+backporting `llvm#189437` so the pass can at least be disabled selectively — both beat the
+status quo.
+
+### Upstream state
+
+The pass has several **open** crash reports and fixes in flight, which suggests this area is
+still settling:
+
+| PR | state | subject |
+| --- | --- | --- |
+| [#205962](https://github.com/llvm/llvm-project/pull/205962) | open | overlapping insert crash during rewrite-agpr-copy-mfma |
+| [#198472](https://github.com/llvm/llvm-project/pull/198472) | open | crash from virtual register defs not dominating uses |
+| [#200126](https://github.com/llvm/llvm-project/pull/200126) | open | `IMPLICIT_DEF` for a reaching def on an unspilled reload |
+| [#167347](https://github.com/llvm/llvm-project/pull/167347) | open | verify dominance when rewriting spills to registers |
+| [#190719](https://github.com/llvm/llvm-project/pull/190719) / [#193286](https://github.com/llvm/llvm-project/pull/193286) | merged | verifier crash from multiple live range components |
+
+Our reproducer passes on LLVM 22, so whatever is needed is already in that branch; none of the
+above has been confirmed as *the* fix, and the merged one (#190719) has a different symptom
+(verifier error vs `SlotIndex` assertion). Identifying the precise commit would need a bisect
+across LLVM 21.x→22, which needs a build environment not available here.
