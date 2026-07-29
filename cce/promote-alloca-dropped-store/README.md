@@ -295,6 +295,34 @@ $ opt -mcpu=gfx90a -passes=amdgpu-promote-alloca -S pa_min.ll
 Any negative byte-offset GEP onto a promotable alloca reproduces it; the 1-based Fortran
 subscript is just the common way to generate one.
 
+
+## Version triage: a regression confined to LLVM 21
+
+The same 14-line `pa_min.ll` through four LLVM releases available on Frontier
+(`./triage.sh` reproduces this):
+
+| toolchain | LLVM | result |
+| --- | --- | --- |
+| ROCm 7.0.2 | 20.0.0 | **not promoted** — alloca and GEPs left intact (safe) |
+| **CCE 21.0.2** | **21.1.8** | **promoted with `%n + 0x3FFFFFFF`** — wrong answers |
+| ROCm 7.2.0 | 22.0.0 | promoted correctly as `%n - 1` |
+| ROCm 7.13.0 | 23.0.0 | promoted correctly as `%n - 1` |
+
+LLVM 20 declines to promote this shape at all, so it cannot get it wrong. LLVM 21 **adds**
+the ability to fold a chained byte-offset GEP into a vector index but performs the
+byte-to-element conversion unsigned. LLVM 22 fixes the arithmetic.
+
+**CCE 21.0.2 is based on LLVM 21.1.8 — the one release where the capability exists and is
+wrong.** The neighbours are AMD forks rather than pristine upstream, so this is strong
+evidence rather than proof, but the boundary is sharp and the corrected expression
+(`add i32 %n, -1`) is visible in both later versions.
+
+This matters for triage: the fix already exists upstream, so this is a backport rather than
+new development. It is also the second CCE 21.0.2 defect found to be fixed between LLVM 21
+and 22 — see `../instcombine-phi-addrspace-cast`, which has the same version boundary. Two
+independent wrong-answer/abort defects with a common resolution point is an argument for
+rebasing CCE onto a later LLVM rather than patching individually.
+
 ### Suggested fix
 
 Treat the byte offset as **signed** when converting to an element index, and bail out of
