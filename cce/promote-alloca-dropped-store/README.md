@@ -324,44 +324,73 @@ independent wrong-answer/abort defects with a common resolution point is an argu
 rebasing CCE onto a later LLVM rather than patching individually.
 
 
-## Upstream: the exact function, and what the corrected code looks like
+## Upstream: the exact function, and a correction to the mechanism
 
 The conversion lives in **`computeGEPToVectorIndex()`** in
-`llvm/lib/Target/AMDGPU/AMDGPUPromoteAlloca.cpp`. Current upstream does the byte-to-element
-conversion with **signed** arithmetic:
+`llvm/lib/Target/AMDGPU/AMDGPUPromoteAlloca.cpp`.
 
-```cpp
-if (ConstOffset.srem(VecElemSize) != 0)          // signed remainder: bail if not a multiple
-  return {};
-APInt IndexQuot = ConstOffset.sdiv(VecElemSize); // SIGNED division
-Result.ConstIndex = ConstantInt::get(Ctx, IndexQuot.sextOrTrunc(BW));
+**Correction.** An earlier revision of this entry said upstream fixed this by switching an
+*unsigned* division to a signed one. That is wrong. Walking the file's history via the GitHub
+API shows the division has been **signed all along** — before
+[llvm#175489](https://github.com/llvm/llvm-project/pull/175489) the code read
+`APInt::sdivrem(ConstOffset, VecElemSize, IndexQuot, Rem)`, and that commit only refactored it
+to the current `srem` guard plus `sdiv`:
+
+```diff
+-  APInt::sdivrem(ConstOffset, VecElemSize, IndexQuot, Rem);
++  if (ConstOffset.srem(VecElemSize) != 0)
++    return {};
++  APInt IndexQuot = ConstOffset.sdiv(VecElemSize);
 ```
 
-(<https://llvm.org/doxygen/AMDGPUPromoteAlloca_8cpp_source.html>, `calculateVectorIndex` /
-`computeGEPToVectorIndex`.)
+So the defect is **not** the division's signedness. The arithmetic identifies it exactly:
 
-That is exactly the shape a `-4` byte offset needs: `sdiv` yields `-1`, `sextOrTrunc` preserves
-the sign, and the `srem` guard rejects offsets that are not a whole number of elements. The
-observed CCE 21.0.2 output — `%n + 0x3FFFFFFF`, i.e. `0xFFFFFFFC / 4` — is what an **unsigned**
-division of the same offset produces.
+```
+-4 as i32            = 0xFFFFFFFC
+zero-extended to i64 = 0x00000000FFFFFFFC = 4294967292
+sdiv by 4            = 1073741823 = 0x3FFFFFFF     <-- the constant CCE emits
+```
 
-`computeGEPToVectorIndex` was introduced by
-[llvm/llvm-project#122342](https://github.com/llvm/llvm-project/pull/122342)
-("[AMDGPU] Update PromoteAlloca to handle GEPs with variable offset", merged 2025-02-24), which
-is what gave the pass the ability to fold variable/chained-offset GEPs at all. That timing lines
-up with the version triage above: LLVM 20 predates it and therefore declines to promote; LLVM 21
-carries it; LLVM 22 carries the signed form.
+whereas the correct path is
 
-**Not established:** the specific commit that changed the conversion to signed. It may be a
-follow-up fix to #122342 upstream, or divergence between CCE's 21.1.8 branch and the AMD fork —
-the LLVM sources are not on this system to bisect, and the PR diff view did not surface the
-relevant hunk. What *is* established is the function to look at and the exact expression it
-should produce.
+```
+-4 sign-extended     = 0xFFFFFFFFFFFFFFFC = -4
+sdiv by 4            = -1
+```
 
-**Suggested action for the vendor:** diff CCE 21.0.2's `computeGEPToVectorIndex` against
-upstream `main`. If the local copy uses `udiv`/`urem`/`zextOrTrunc` where upstream uses
-`sdiv`/`srem`/`sextOrTrunc`, that is the whole defect, and the fix is a three-token change with
-an existing upstream reference implementation.
+The byte offset is therefore being **zero-extended where it must be sign-extended**, and the
+(correctly signed) division then operates on a large positive number. `0x3FFFFFFF` is not an
+arbitrary constant — it is precisely `zext(-4 : i32) / 4`, which is what makes this
+attribution solid even without CCE's sources.
+
+Note upstream's `Result.ConstIndex = ConstantInt::get(Ctx, IndexQuot.sextOrTrunc(BW))` uses
+`sextOrTrunc`; a `zextOrTrunc`, or a `zext` when widening the offset before division, produces
+exactly the observed result.
+
+### Commit history examined
+
+`llvm/lib/Target/AMDGPU/AMDGPUPromoteAlloca.cpp`, commits after CCE 21.0.2's stated merge
+cutoff of 2025-12-12 (the module's own `help` text: *"LLVM 21 base (merges up to Dec 12, 2025 —
+LLVM version 21.1.8)"*):
+
+| commit | date | touches the offset math? |
+| --- | --- | --- |
+| `e741cd88a` fix users of multiple allocas | 2025-12-18 | no |
+| `5897f276a` sandwich dynamic-index load with bitcasts | 2025-12-19 | no |
+| `4e74fba5b` fix use-after-erase | 2026-01-08 | no |
+| `c7408d17f` unify cast chain implementations | 2026-02-03 | no |
+| **`1afd7d40a`** support i8/i16 GEP indices ([#175489](https://github.com/llvm/llvm-project/pull/175489)) | 2026-02-27 | **yes — refactors, already signed** |
+| `bddc8e20b`, `a6ceae48f`, later | 2026-02-24+ | no |
+
+None of these introduces signed division, because it was already signed. That points at
+**divergence in CCE's branch rather than a missing upstream backport** — which changes the ask:
+this may not be fixed by rebasing, and HPE should look at their own extension of the offset.
+
+### What to hand the vendor
+
+Diff CCE 21.0.2's `computeGEPToVectorIndex` against upstream, focusing on **how the constant
+byte offset is widened** before the divide (`sext` vs `zext`, `sextOrTrunc` vs `zextOrTrunc`),
+not on the divide itself.
 
 ### Suggested fix
 
