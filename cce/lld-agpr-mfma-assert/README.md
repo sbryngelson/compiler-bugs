@@ -563,3 +563,46 @@ documented above — making this the highest-value single change of all the CCE 
 Other commits to this pass in the 21.1.8→22.1.0 window, none of which match this symptom:
 `9a293530d989`, `ff5f396dacc8`, `156f3fce5449`, `eefad7438cf1`, `085471d777a2`, `fdede21ddf05`,
 `da8f692e3e6e`, `babdad3fdbc6`, `497d648fcc09`, `8a3891ceadad`, `2183846a15a0`.
+
+## Verdicts
+
+This entry has two runnable scripts, scoring two different things. Both exit 0 when the
+result matches this document (see `../README.md` for the convention).
+
+| script | what it scores | measured |
+| --- | --- | --- |
+| `repro/run.sh [ver]` | the **defect**: `llc` asserts in AMDGPU Rewrite AGPR-Copy-MFMA at `-O2`, clean at `-O0` | CCE 21.0.2 → exit 0 |
+| `run_regpressure.sh [ver]` | the **cost** of the `-mai-insts` workaround | CCE 21.0.2 → exit 0 |
+
+`repro/run.sh` needs no GPU, no MPI and no build system — only CCE 21.x's own assertion-enabled
+`llc`. It checks both reduction depths and both optimization levels, so a clean `-O0` run is
+required alongside the `-O2` assert; an unconditional failure would not be this defect.
+
+CCE 19.0.0 and 20.0.2 do not ship the offending pass and compile the module cleanly, so
+`./repro/run.sh 20.0.2` reports MISMATCH **by design** — that is the negative control, not a
+regression in the harness.
+
+### Why the cost script scores a signature, not the exact integers
+
+`run_regpressure.sh` re-measured on CCE 21.0.2 reproduces README's table exactly:
+
+```
+arm        max_vgpr   max_agpr   max_scratch
+baseline   512        256        36
+noagpr     256        none       1060
+```
+
+but it scores the **mechanism** rather than those numbers:
+
+- baseline must use AGPRs as extra register storage (`agpr > 0`),
+- `-mai-insts` must leave none available (`agpr = 0`) and cap VGPRs at 256,
+- scratch must grow by at least 10× (measured: **29×**, 36 B → 1060 B).
+
+Register allocation is retuned between compiler and ROCm releases, so pinning 512/256/36
+would report a "fix" every time the allocator shifted. What must not change is the signature:
+if AGPRs became available again, or scratch stopped growing, the workaround stopped costing
+what it costs — and that is the thing worth being told about.
+
+The baseline arm explicitly `unset`s `CRAY_CCE_LLD_ARGS`. MFC's module file exports
+`-mai-insts`, which is precisely what the baseline is a control for; without the unset both
+arms would measure the same thing and the comparison would be vacuous.
