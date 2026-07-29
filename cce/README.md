@@ -259,6 +259,56 @@ be read as "still broken" or "now fixed".
 That is worth stating plainly: an unscoreable reproducer is close to no reproducer. The newer
 entries in this directory were all written to self-verify for exactly this reason.
 
+## Upstream or Cray-side? Tested attributions
+
+Most entries here assert where the fix belongs. Until now those attributions were *inferred*
+— from reading upstream diffs, and from comparing against ROCm's LLVM, whose **assertions are
+compiled out** so its clean runs cannot distinguish "fixed" from "not caught".
+
+A stock **`llvmorg-21.1.8`** — CCE 21.0.2's exact base — is now built with
+`-DLLVM_ENABLE_ASSERTIONS=ON` at
+`/lustre/orion/cfd154/scratch/sbryngelson/llvm-src/build-2118/bin/`. Rebuild it with
+`joblogs/resume_llvm2118.sh` (idempotent; refuses to report if assertions came out off).
+
+Every IR-level reproducer run through it, same invocation as CCE:
+
+| entry | CCE 21.0.2 | stock 21.1.8 +assert | attribution |
+| --- | --- | --- | --- |
+| [`instcombine-phi-addrspace-cast`](instcombine-phi-addrspace-cast) | assert | **assert** | upstream defect — backport is the whole ask |
+| [`promote-alloca-dropped-store`](promote-alloca-dropped-store) | wrong index | **wrong index** | upstream defect — backport is the whole ask |
+| [`mir-roundtrip-bb-name`](mir-roundtrip-bb-name) | broken | **broken** | upstream (filed llvm#212785) |
+| [`private-flat-pointer`](private-flat-pointer) | poisoned store | **poisoned store** | **CCE front end** — see below |
+| [`lld-agpr-mfma-assert`](lld-agpr-mfma-assert) | assert | **clean** | **Cray-side trigger** — see below |
+
+Two rows need reading carefully, and both were previously stated wrongly:
+
+**`private-flat-pointer` — agreement *confirms* the front-end attribution.** Its reproducers
+are hand-written `.ll` containing the bad pattern CCE's Fortran front end emits (a private
+pointer converted to flat without the aperture). Stock LLVM producing the same wild store is
+the **expected control**: it shows LLVM faithfully compiles the IR it was given, so the defect
+is upstream of the IR — in the front end. A *clean* stock result would have been the surprise.
+
+**`lld-agpr-mfma-assert` — the backport claim did not survive.** Stock 21.1.8 compiles the real
+crashing module cleanly, and stays clean when forced to maximum register pressure, with the
+pass verified as running and AGPRs verified as allocated. So the dead/PHI valno is produced by
+CCE-side register allocation; the missing upstream guard is latent. The entry previously called
+the backport "the fix" — it is worth carrying, but claiming upstream reproduces this would be
+false.
+
+### What this method cannot reach
+
+The OpenMP and Fortran entries — the whole `defaultmap-*` family,
+`omp-defaultmap-scalar-override`, `explicit-shape-dummy-lost-writes`,
+`inlinenever-ignored-device`, `contiguous-mix-dropped-stores` — live in CCE's **proprietary
+Fortran front end and OpenMP lowering**. There is no upstream counterpart to run them against,
+so "does stock LLVM reproduce it?" is not a question that can be asked. For those, the
+available controls are the ones each entry already uses: an OpenACC arm beside the OpenMP arm,
+an explicit clause beside the `defaultmap` one, and cross-checking against **amdflang**, which
+is open source.
+
+`lld-infer-address-spaces-cce20` is testable in principle but needs `ld.lld`, not `llc` — its
+README notes the same module through `llc` completes cleanly and proves nothing.
+
 ## Hit a link crash?
 
 Start at [`LINK-CRASHES.md`](LINK-CRASHES.md) — an index of every crash seen during the
