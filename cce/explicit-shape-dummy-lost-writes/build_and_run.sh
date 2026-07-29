@@ -39,29 +39,49 @@ guard_device_image "$out/omp/dummyshape"
 guard_device_image "$out/acc/dummyshape_acc_fixed"
 
 echo
-cat <<EOF
-== now run them on a GPU node
+# ---------------------------------------------------------------------------
+# Run and score. The login node has a GPU, so no srun is needed; set
+# NO_RUN=1 to stop after the build and just print the commands.
+# ---------------------------------------------------------------------------
+export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${CRAY_LD_LIBRARY_PATH}:${LD_LIBRARY_PATH}"
 
-    export LD_LIBRARY_PATH="\${ROCM_PATH}/lib:\${CRAY_LD_LIBRARY_PATH}:\${LD_LIBRARY_PATH}"
-    for m in explicit assumed; do srun -n1 --gpus-per-task 1 ./$out/omp/dummyshape     \$m; done
-    for m in explicit assumed; do srun -n1 --gpus-per-task 1 ./$out/acc/dummyshape_acc_fixed \$m; done
+if [ "${NO_RUN:-0}" = 1 ]; then
+    echo "== NO_RUN set; run these yourself (on a GPU node, prefix with: srun -n1 --gpus-per-task 1)"
+    for m in explicit assumed; do echo "    ./$out/omp/dummyshape $m"; done
+    for m in explicit assumed; do echo "    ./$out/acc/dummyshape_acc_fixed $m"; done
+    exit 0
+fi
 
-Expected on CCE 21.0.2 -- the defect is OpenMP-only:
+# arm  binary                      dummy      expected
+#                                             (FAIL = the defect reproducing)
+run_arm() {                       # run_arm <model> <binary> <dummy> <expected>
+    local model=$1 bin=$2 dummy=$3 want=$4 line got
+    line=$(./"$bin" "$dummy" 2>&1 | tail -1)
+    case "$line" in
+        *PASS*) got=PASS;; *FAIL*) got=FAIL;; *) got="?($line)";;
+    esac
+    guard_verdict "$want" "$got" "$(printf '%-4s dummy=%-8s %s' "$model" "$dummy" "$line")"
+}
 
-    omp  dummy=explicit  wrong=64 of 64   FAIL   <-- the defect: device writes
-                                                     through the explicit-shape
-                                                     dummy are lost
-    omp  dummy=assumed   wrong=0  of 64   PASS   <-- control: assumed-shape ok
-    acc  dummy=explicit  wrong=0  of 64   PASS   <-- control: OpenACC ok
-    acc  dummy=assumed   wrong=0  of 64   PASS
+echo "== running (login node has a GPU; no srun needed)"
+run_arm omp "$out/omp/dummyshape"                explicit FAIL   # <-- the defect
+run_arm omp "$out/omp/dummyshape"                assumed  PASS   # control
+run_arm acc "$out/acc/dummyshape_acc_fixed"      explicit PASS   # control
+run_arm acc "$out/acc/dummyshape_acc_fixed"      assumed  PASS   # control
 
-The OpenMP failure also reproduces on CCE 19.0.0 (./build_and_run.sh 19.0.0).
-
-NOTE the polarity: the omp 'explicit' row printing FAIL is the bug REPRODUCING.
-The other three rows are controls and must PASS -- if an OpenACC row fails, the
-comparison proves nothing, which is exactly how this reproducer was got wrong
-twice (see README).
-
-To capture the mapping evidence in README.md:
-    CRAY_ACC_DEBUG=2 srun -n1 --gpus-per-task 1 ./$out/omp/dummyshape explicit
-EOF
+echo
+if [ "$GUARD_RC" -eq 0 ]; then
+    echo "RESULT: BUG PRESENT (as documented) -- OpenMP device writes through an"
+    echo "        explicit-shape dummy are lost, while the assumed-shape dummy and"
+    echo "        both OpenACC arms are correct."
+else
+    echo "RESULT: *** deviation from the documented behaviour ***"
+    echo "        NOTE the polarity: the omp/explicit row is SUPPOSED to say FAIL."
+    echo "        If a CONTROL row moved, the comparison proves nothing and this is an"
+    echo "        environment problem, not a fix -- that is how this reproducer was"
+    echo "        got wrong twice (see README). Check the controls before the defect."
+fi
+echo
+echo "To capture the mapping evidence in README.md:"
+echo "    CRAY_ACC_DEBUG=2 ./$out/omp/dummyshape explicit"
+exit "$GUARD_RC"

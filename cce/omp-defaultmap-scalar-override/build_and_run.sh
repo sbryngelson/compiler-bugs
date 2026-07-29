@@ -41,29 +41,59 @@ echo "== verifying each binary really contains GPU code"
 for f in "$ACC" $OMP; do guard_device_image "$out/$f"; done
 
 echo
-cat <<'EOF'
-== now run them on a GPU node
+# ---------------------------------------------------------------------------
+# Run and score against the documented duplicate counts. The login node has a
+# GPU, so no srun is needed; NO_RUN=1 stops after the build.
+#
+# Scoring the exact count, not just PASS/FAIL, is deliberate: 'bare' and
+# 'defaultmap' both FAIL, but for different reasons (3840 = the conforming
+# OpenMP 5.0 scalar default with 256 unique values; 4095 = the defect, a single
+# shared scalar). A pass/fail harness would call those the same thing.
+# ---------------------------------------------------------------------------
+export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${CRAY_LD_LIBRARY_PATH}:${LD_LIBRARY_PATH}"
 
-    export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${CRAY_LD_LIBRARY_PATH}:${LD_LIBRARY_PATH}"
-    for b in build/atomcap_*; do [ -x "$b" ] && srun -n1 --gpus-per-task 1 "./$b"; done
+if [ "${NO_RUN:-0}" = 1 ]; then
+    echo "== NO_RUN set; run these yourself (on a GPU node: srun -n1 --gpus-per-task 1 ./b)"
+    for b in "$ACC" $OMP; do echo "    ./$out/$b"; done
+    exit 0
+fi
 
-Expected on CCE 21.0.2 (measured; see README variant matrix and run-output.txt):
+# binary                 expected-duplicates   role
+EXPECT="atomcap_acc:0:control-reference
+atomcap_omp_maponly:0:control-only-correct-omp-form
+atomcap_omp_bare:3840:conforming-omp5-scalar-default
+atomcap_omp_defaultmap:4095:THE-DEFECT
+atomcap_omp_order:4095:defect-order-irrelevant
+atomcap_omp_tofrom:4095:defect
+atomcap_omp_tofrommap:4095:defect"
 
-    acc copyin (control)      duplicates=0     PASS   <- reference
-    omp map only              duplicates=0     PASS   <- the only correct OpenMP form
-    omp no-map no-defmap      duplicates=3840  FAIL   <- conforming: 256 unique, the
-                                                         OpenMP 5.0 scalar default
-    omp defaultmap+map        duplicates=4095  FAIL   <- THE DEFECT
-    omp map-then-defaultmap   duplicates=4095  FAIL   <- order is irrelevant
-    omp tofrom+map            duplicates=4095  FAIL
-    omp defmap+map(tofrom)    duplicates=4095  FAIL
+echo "== running (login node has a GPU; no srun needed)"
+for e in $EXPECT; do
+    b=${e%%:*}; rest=${e#*:}; want=${rest%%:*}; role=${rest#*:}
+    line=$(./"$out/$b" 2>&1 | grep -m1 'duplicates=')
+    got=$(printf '%s\n' "$line" | grep -oE 'duplicates=[0-9]+' | grep -oE '[0-9]+')
+    guard_verdict "$want" "${got:-none}" "$(printf '%-24s %-32s' "$b" "$role")"
+done
 
-NOTE the polarity: FAIL on the defaultmap rows is the bug REPRODUCING.  The
-'bare' row failing is expected and conforming -- it is included so the defect is
-not confused with the language default.
+# The two *_update variants drop the capture and keep only the increment. Both
+# must PASS -- they are what attributes the defect to defaultmap's data
+# environment rather than to the atomic itself.
+for b in atomcap_omp_update atomcap_acc_update; do
+    o=$(./"$out/$b" 2>&1)
+    case "$o" in *PASS*) g=PASS;; *FAIL*) g=FAIL;; *) g=UNKNOWN;; esac
+    guard_verdict PASS "$g" "$(printf '%-24s %-32s' "$b" "control-increment-only")"
+done
 
-The two *_update variants drop the capture and keep only the increment; both are
-correct (count=4096 of 4096 PASS) under OpenMP and OpenACC, which is why the
-defect is attributed to defaultmap's effect on the data environment rather than
-to the atomic.
-EOF
+echo
+if [ "$GUARD_RC" -eq 0 ]; then
+    echo "RESULT: BUG PRESENT (as documented) -- with defaultmap in play every thread"
+    echo "        shares one scalar (4095 duplicates of 4096), regardless of clause order"
+    echo "        or tofrom. 'bare' at 3840 is the conforming default, and the OpenACC and"
+    echo "        increment-only controls are clean, so the atomic is not at fault."
+else
+    echo "RESULT: *** deviation from the documented behaviour ***"
+    echo "        NOTE the polarity: 4095 on the defaultmap rows is the bug REPRODUCING."
+    echo "        Check the controls (acc, maponly, *_update) first -- if one of those"
+    echo "        moved, the comparison proves nothing and the environment is suspect."
+fi
+exit "$GUARD_RC"
