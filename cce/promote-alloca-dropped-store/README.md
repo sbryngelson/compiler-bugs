@@ -1,7 +1,7 @@
 # CCE 21 silently discards a dynamically-indexed store into a 1-based private array
 
 > **Severity:** **Silent wrong answers**  
-> **Fix belongs to:** CCE front end (upstream is already correct)  
+> **Fix belongs to:** **Backport [`b965f265388a`](https://github.com/llvm/llvm-project/pull/157682)** — absent from CCE's LLVM 21.1.8 base  
 > **Status:** Root-caused: a negative byte offset is zero-extended instead of sign-extended, so `zext(-4)/4 = 0x3FFFFFFF` becomes the vector index and the store is discarded.
 
 **Wrong answers, no diagnostic, no crash.** A store to `arr(v)` — where `arr` is a
@@ -328,75 +328,61 @@ independent wrong-answer/abort defects with a common resolution point is an argu
 rebasing CCE onto a later LLVM rather than patching individually.
 
 
-## Upstream: the exact function, and a correction to the mechanism
+## Upstream fix identified: `b965f265388a` (llvm/llvm-project#157682)
 
-The conversion lives in **`computeGEPToVectorIndex()`** in
-`llvm/lib/Target/AMDGPU/AMDGPUPromoteAlloca.cpp`.
+**"[AMDGPU] Treat GEP offsets as signed in AMDGPUPromoteAlloca"**, 2025-09-10. The commit
+message states the defect verbatim:
 
-**Correction.** An earlier revision of this entry said upstream fixed this by switching an
-*unsigned* division to a signed one. That is wrong. Walking the file's history via the GitHub
-API shows the division has been **signed all along** — before
-[llvm#175489](https://github.com/llvm/llvm-project/pull/175489) the code read
-`APInt::sdivrem(ConstOffset, VecElemSize, IndexQuot, Rem)`, and that commit only refactored it
-to the current `srem` guard plus `sdiv`:
+> AMDGPUPromoteAlloca can transform i32 GEP offsets that operate on allocas into i64
+> extractelement indices. **Before this patch, negative GEP offsets would be zero-extended,
+> leading to wrong extractelement indices with values around (2\*\*32-1).**
+
+The change is `udivrem` -> `sdivrem` in `computeGEPToVectorIndex`:
 
 ```diff
--  APInt::sdivrem(ConstOffset, VecElemSize, IndexQuot, Rem);
-+  if (ConstOffset.srem(VecElemSize) != 0)
-+    return {};
-+  APInt IndexQuot = ConstOffset.sdiv(VecElemSize);
+-  uint64_t Rem;
+-  APInt::udivrem(ConstOffset, VecElemSize, IndexQuot, Rem);
+-  if (Rem != 0)
++  APInt Rem;
++  APInt::sdivrem(ConstOffset, APInt(ConstOffset.getBitWidth(), VecElemSize),
++                 IndexQuot, Rem);
++  if (!Rem.isZero())
 ```
 
-So the defect is **not** the division's signedness. The arithmetic identifies it exactly:
+with the same substitution for the variable-offset path.
 
+### Verified against the exact CCE base
+
+`llvmorg-21.1.8` — the version CCE 21.0.2 states it is built on — contains the **unsigned** form:
+
+```console
+$ git show llvmorg-21.1.8:llvm/lib/Target/AMDGPU/AMDGPUPromoteAlloca.cpp | grep divrem
+  APInt::udivrem(ConstOffset, VecElemSize, IndexQuot, Rem);
+  APInt::udivrem(VarOffset.second, VecElemSize, OffsetQuot, Rem);
+
+$ git merge-base --is-ancestor b965f265388a llvmorg-21.1.8   # -> false
+$ git merge-base --is-ancestor b965f265388a llvmorg-22.1.0   # -> true
 ```
--4 as i32            = 0xFFFFFFFC
-zero-extended to i64 = 0x00000000FFFFFFFC = 4294967292
-sdiv by 4            = 1073741823 = 0x3FFFFFFF     <-- the constant CCE emits
-```
 
-whereas the correct path is
+The fix landed **2025-09-10**, three months before CCE 21.0.2's stated merge cutoff of
+2025-12-12. It was available and not picked up — a **missed backport**, not divergence.
 
-```
--4 sign-extended     = 0xFFFFFFFFFFFFFFFC = -4
-sdiv by 4            = -1
-```
+### Correction to earlier revisions of this entry
 
-The byte offset is therefore being **zero-extended where it must be sign-extended**, and the
-(correctly signed) division then operates on a large positive number. `0x3FFFFFFF` is not an
-arbitrary constant — it is precisely `zext(-4 : i32) / 4`, which is what makes this
-attribution solid even without CCE's sources.
+This entry has said two wrong things, both now retracted:
 
-Note upstream's `Result.ConstIndex = ConstantInt::get(Ctx, IndexQuot.sextOrTrunc(BW))` uses
-`sextOrTrunc`; a `zextOrTrunc`, or a `zext` when widening the offset before division, produces
-exactly the observed result.
+1. An early revision blamed "unsigned division". **That was right**, but was then
+2. "corrected" to say the division had always been signed and the defect was CCE-side
+   divergence. **That correction was wrong.** It came from reading the diff of a *later*
+   commit ([#175489](https://github.com/llvm/llvm-project/pull/175489), Feb 2026), which shows
+   `sdivrem` being refactored into `srem`+`sdiv`. By then `b965f265388a` had already replaced
+   `udivrem` with `sdivrem`, so the older code visible in that diff was not what 21.1.8 ships.
 
-### Commit history examined
-
-`llvm/lib/Target/AMDGPU/AMDGPUPromoteAlloca.cpp`, commits after CCE 21.0.2's stated merge
-cutoff of 2025-12-12 (the module's own `help` text: *"LLVM 21 base (merges up to Dec 12, 2025 —
-LLVM version 21.1.8)"*):
-
-| commit | date | touches the offset math? |
-| --- | --- | --- |
-| `e741cd88a` fix users of multiple allocas | 2025-12-18 | no |
-| `5897f276a` sandwich dynamic-index load with bitcasts | 2025-12-19 | no |
-| `4e74fba5b` fix use-after-erase | 2026-01-08 | no |
-| `c7408d17f` unify cast chain implementations | 2026-02-03 | no |
-| **`1afd7d40a`** support i8/i16 GEP indices ([#175489](https://github.com/llvm/llvm-project/pull/175489)) | 2026-02-27 | **yes — refactors, already signed** |
-| `bddc8e20b`, `a6ceae48f`, later | 2026-02-24+ | no |
-
-None of these introduces signed division, because it was already signed. That points at
-**divergence in CCE's branch rather than a missing upstream backport** — which changes the ask:
-this may not be fixed by rebasing, and HPE should look at their own extension of the offset.
-
-### What to hand the vendor
-
-Diff CCE 21.0.2's `computeGEPToVectorIndex` against upstream, focusing on **how the constant
-byte offset is widened** before the divide (`sext` vs `zext`, `sextOrTrunc` vs `zextOrTrunc`),
-not on the divide itself.
+Reading a single commit's "before" side is not the same as reading the release the vendor
+actually built from. Checking out `llvmorg-21.1.8` settled it in one command.
 
 ### Suggested fix
+
 
 Treat the byte offset as **signed** when converting to an element index, and bail out of
 promotion when the offset is not an exact multiple of the element size.
