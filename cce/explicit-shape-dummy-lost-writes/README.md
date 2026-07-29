@@ -1,5 +1,9 @@
 # CCE 21: device writes through an explicit-shape dummy with a runtime extent are lost under OpenMP
 
+> **Severity:** **Silent wrong answers** — device writes never reach the host  
+> **Fix belongs to:** CCE Fortran front end  
+> **Status:** Root-caused: no extent is emitted for an explicit-shape dummy, so the implicit map is 0 bytes and the runtime returns the host pointer.
+
 **Wrong answers, no diagnostic, no crash.** A module-resident allocatable array of a
 derived type is passed to a routine whose dummy is declared **explicit-shape with a
 runtime extent** — `dimension(n_gp)`. Under OpenMP target offload, writes performed on
@@ -135,3 +139,57 @@ model-dependence, and two hypotheses that are ruled out.
 **Declare the dummy assumed-shape**, `dimension(:)`. Measured correct under both models.
 In MFC this is the shape these routines should have had anyway, since the actual
 argument is always a whole module allocatable.
+
+
+## Root cause: no extent is emitted for the explicit-shape dummy
+
+The two routines differ only in how the dummy is declared, and that changes the **kernel
+signature**. Extracted with `./extract-device-ir.sh dummyshape.f90 ds.ll`:
+
+| routine | dummy | kernel arguments |
+| --- | --- | --- |
+| `fill_assumed` | `dimension(:)` | **4** — base pointer plus descriptor bounds |
+| `fill_explicit` | `dimension(n_gp)` | **1** — a bare pointer, nothing else |
+
+```llvm
+; assumed-shape: descriptor travels with the argument
+define amdgpu_kernel void @"fill_assumed$m_gp_$ck_L39_7"(i64, i64, i64, i64)
+
+; explicit-shape: one pointer, no extent
+define amdgpu_kernel void @"fill_explicit$m_gp_$ck_L30_1"(i64 %"$$arg_ptr_acc_a_t25_t561")
+  ...
+  %r = load i32, ptr addrspace(1) @n_gp__cray_acc   ; loop bound read from the device global
+```
+
+Note the kernel *does* obtain the loop count — it reads `n_gp` from device memory — so it
+iterates the right number of times. What it never receives is a **device** pointer for `a`.
+
+An explicit-shape dummy carries no descriptor, so the size for the implicit map has to be
+computed by the compiler from the declared extent (`n_gp`) at the call site. It is not: the
+runtime trace shows the map arriving as **0 bytes** with `DOPE_VECTOR` absent from the flags —
+
+```
+'ghost_points_in(:)' (0 bytes)
+     flags: ALLOCATE COPY_HOST_TO_ACC ACQ_PRESENT REG_PRESENT     <- no DOPE_VECTOR
+     memory not found in present table
+     allocate (0 bytes)
+     new acc ptr 7fffeb364d90                                     <- a host address
+```
+
+With a zero-length allocation there is no device buffer, so the runtime returns the host
+address, and the kernel — iterating the correct number of times — writes across the host
+pointer from the GPU. Nothing faults on a machine with unified addressing; the writes simply
+never appear in the device copy the host later reads back.
+
+**So the chain is:** no descriptor -> compiler emits no extent -> 0-byte map -> no allocation ->
+host pointer returned -> device writes lost.
+
+The OpenACC arm is correct because it supplies the bounds, which is what makes this reportable
+rather than "explicit-shape dummies are unsupported": the same source construct on the same
+compiler and hardware is correct under one offload model and silently wrong under the other.
+
+### Fix
+
+Emit the extent for an explicit-shape dummy — the declared bound is available at the call site
+— or reject the construct with a diagnostic. Producing a 0-byte map and continuing is the worst
+of the three options, because it fails silently.
