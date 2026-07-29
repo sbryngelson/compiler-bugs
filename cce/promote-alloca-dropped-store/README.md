@@ -323,6 +323,46 @@ and 22 — see `../instcombine-phi-addrspace-cast`, which has the same version b
 independent wrong-answer/abort defects with a common resolution point is an argument for
 rebasing CCE onto a later LLVM rather than patching individually.
 
+
+## Upstream: the exact function, and what the corrected code looks like
+
+The conversion lives in **`computeGEPToVectorIndex()`** in
+`llvm/lib/Target/AMDGPU/AMDGPUPromoteAlloca.cpp`. Current upstream does the byte-to-element
+conversion with **signed** arithmetic:
+
+```cpp
+if (ConstOffset.srem(VecElemSize) != 0)          // signed remainder: bail if not a multiple
+  return {};
+APInt IndexQuot = ConstOffset.sdiv(VecElemSize); // SIGNED division
+Result.ConstIndex = ConstantInt::get(Ctx, IndexQuot.sextOrTrunc(BW));
+```
+
+(<https://llvm.org/doxygen/AMDGPUPromoteAlloca_8cpp_source.html>, `calculateVectorIndex` /
+`computeGEPToVectorIndex`.)
+
+That is exactly the shape a `-4` byte offset needs: `sdiv` yields `-1`, `sextOrTrunc` preserves
+the sign, and the `srem` guard rejects offsets that are not a whole number of elements. The
+observed CCE 21.0.2 output — `%n + 0x3FFFFFFF`, i.e. `0xFFFFFFFC / 4` — is what an **unsigned**
+division of the same offset produces.
+
+`computeGEPToVectorIndex` was introduced by
+[llvm/llvm-project#122342](https://github.com/llvm/llvm-project/pull/122342)
+("[AMDGPU] Update PromoteAlloca to handle GEPs with variable offset", merged 2025-02-24), which
+is what gave the pass the ability to fold variable/chained-offset GEPs at all. That timing lines
+up with the version triage above: LLVM 20 predates it and therefore declines to promote; LLVM 21
+carries it; LLVM 22 carries the signed form.
+
+**Not established:** the specific commit that changed the conversion to signed. It may be a
+follow-up fix to #122342 upstream, or divergence between CCE's 21.1.8 branch and the AMD fork —
+the LLVM sources are not on this system to bisect, and the PR diff view did not surface the
+relevant hunk. What *is* established is the function to look at and the exact expression it
+should produce.
+
+**Suggested action for the vendor:** diff CCE 21.0.2's `computeGEPToVectorIndex` against
+upstream `main`. If the local copy uses `udiv`/`urem`/`zextOrTrunc` where upstream uses
+`sdiv`/`srem`/`sextOrTrunc`, that is the whole defect, and the fix is a three-token change with
+an existing upstream reference implementation.
+
 ### Suggested fix
 
 Treat the byte offset as **signed** when converting to an element index, and bail out of
