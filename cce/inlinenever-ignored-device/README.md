@@ -93,6 +93,33 @@ attributes #23 = { ... alwaysinline ... }
 The caller's IR then contains blocks attributed to the callee's source file — i.e. it
 was inlined.
 
+## 4b. The documented behaviour, verbatim
+
+From `man 7 inlinealways` shipped with CPE (`/opt/cray/pe/cce/*/man/man7/inlinealways.7`,
+which `inlinenever.7` sources):
+
+```
+!DIR$ INLINEALWAYS name[, name] ...
+!DIR$ INLINENEVER name[, name] ...
+
+The inline_never directive specifies functions that should not be inlined.
+If the directive is placed in the definition of the function, inlining is
+never attempted at any call site to name in the entire input file being
+compiled.
+```
+
+`man 7 intro_directives` further classifies `INLINEALWAYS|INLINENEVER` among directives that
+"alter the status of entities" and explicitly **do not apply to particular ranges of code" —
+i.e. it is an entity directive naming a procedure, not a call-site range directive.
+
+The reproducer follows this exactly: the directive is placed **in the definition** of `s_leaf`
+and names it. Documented result is "never inlined at any call site in the file"; actual result
+is `alwaysinline` in the device IR and full inlining at every site.
+
+This rules out the two obvious deflections — wrong spelling and wrong placement. The call-site
+placement (directive in the caller rather than the definition) is also documented and was tested
+separately with the same null result.
+
 ## 5. Why this matters
 
 If device routines must be `alwaysinline` as an implementation constraint of
