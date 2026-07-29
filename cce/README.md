@@ -259,6 +259,14 @@ be read as "still broken" or "now fixed".
 That is worth stating plainly: an unscoreable reproducer is close to no reproducer. The newer
 entries in this directory were all written to self-verify for exactly this reason.
 
+## Hit a link crash?
+
+Start at [`LINK-CRASHES.md`](LINK-CRASHES.md) — an index of every crash seen during the
+offload link, keyed by the signature you can grep from a build log, plus a triage procedure
+for one that is not yet listed. Link crashes all look alike from outside (`ftn` dies after
+"linking", stack dump mentioning `BitcodeCompiler::compile()`) while the underlying defects
+are unrelated, so identifying *which* one you have is the first step.
+
 ## Running a reproducer: the exit-code convention
 
 Every reproducer that can score itself follows one rule:
