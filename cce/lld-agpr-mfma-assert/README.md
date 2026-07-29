@@ -353,3 +353,48 @@ practical path off 19.0.0 now exists in source. It is still a defect worth fixin
 any gfx90a Fortran offload code with enough register pressure to spill into AGPRs will hit
 this, with no diagnostic pointing at the cause and no supported way to force the device link
 to `O0` (see the CCE 20 report).
+
+## Measured cost of the `-mattr=-mai-insts` workaround
+
+The `-plugin-opt=-mattr=-mai-insts` workaround is **not free**. On gfx90a the VGPR/AGPR register
+file is unified, so disabling MFMA/AGPR instructions removes roughly half the allocator's
+budget. Register-hungry kernels then spill to scratch (off-chip) memory.
+
+Measured on MFC's `igr` (Information Geometric Regularization) solver, case-optimized, gfx90a,
+comparing CCE 19.0.0 (no workaround needed) against CCE 21.0.2 with the workaround:
+
+| kernel | CCE 19 vgpr / scratch | CCE 21 vgpr / scratch |
+| --- | --- | --- |
+| `s_igr_riemann_solver ...L829_6` | 224 / 80 | 156 / **544** |
+| `s_igr_riemann_solver ...L2168_9` | 204 / **0** | 139 / **448** |
+| `s_igr_riemann_solver ...L1700_8` | 202 / **0** | 135 / **448** |
+| `s_igr_riemann_solver ...L1319_7` | 165 / **0** | 128 / **448** |
+| `s_igr_riemann_solver ...L430_5` | 152 / 80 | 134 / **544** |
+
+Fewer registers used, far more spilling — three kernels go from **zero** scratch to 448 bytes.
+The AMDGPU code-object notes corroborate the mechanism: the CCE 19 image carries **516**
+`agpr_count` records, the CCE 21 image carries **none**.
+
+End-to-end effect, `grind` (ns/gridpoint/eq/rhs, median of 3, run-to-run variance < 1%):
+
+| case | CCE 19 | CCE 21 + workaround | delta |
+| --- | --- | --- | --- |
+| `viscous_weno5_sgb_acoustic` | 4.20 | 4.34 | +3.5% |
+| `hypo_hll` | 1.80 | 1.87 | +3.6% |
+| `ibm` | 5.16 | 5.32 | +3.0% |
+| **`igr`** | **2.02** | **3.25** | **+60.8%** |
+
+So the workaround costs ~3% on ordinary kernels and **~61% on the most register-hungry one**,
+whose case-optimization benefit also drops from 1.56x to 1.11x.
+
+**Caveat, stated because it was not proven:** the controlled experiment — rebuilding `igr`
+without `-mai-insts` and re-measuring — was attempted and did **not** produce a valid result.
+`CRAY_CCE_LLD_ARGS` is consumed by `lld` through the environment and is not part of the build
+system's configuration hash, so the rebuild was a no-op and the binary was unchanged (verified
+by md5). The attribution above therefore rests on the register/scratch and `agpr_count` evidence,
+which is strong but circumstantial. Anyone repeating this must force a relink.
+
+**Why this raises the priority of fixing the assert itself.** `-mai-insts` is currently the only
+practical way to link on CCE 21.x, and it is a global flag. A fix that lets AGPRs remain enabled
+would recover the spilling; narrowing the workaround (per-TU, or only for the kernels that
+trigger the assert) would be the next-best outcome.
