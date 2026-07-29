@@ -106,3 +106,58 @@ OpenACC offload. `Y_rs` (`real(wp), dimension(1:num_species)`) in
 (`s_convert_conservative_to_primitive_variables$m_variables_conversion_$ck_L505_1`).
 All chemistry regression tests abort; the same source and case pass under
 CCE 19.0.0 only because `Y_rs` was not placed at frame offset 0 there.
+
+## Root cause: offset 0 is made indistinguishable from null — and LLVM is correct
+
+The front end converts a private pointer to flat by hand:
+
+```llvm
+%off  = ptrtoint ptr addrspace(5) %a to i32   ; private ptr is a 32-bit scratch OFFSET
+%z    = zext i32 %off to i64
+%flat = inttoptr i64 %z to ptr                ; "flat pointer" = the bare offset
+```
+
+On AMDGPU a private pointer is an offset into the scratch aperture; converting it to flat
+requires **adding the aperture base**, which is what `addrspacecast` emits. Zero-extending the
+raw offset omits it, so an alloca placed at scratch offset 0 becomes the flat value `0` — which
+is indistinguishable from a null flat pointer.
+
+The rest follows from correct LLVM behaviour. `0xFFFFFFFF` is the AMDGPU null sentinel for
+`addrspace(5)`, so an `addrspacecast` from flat back to private **must** map null to `-1`. That
+lowering is visible in the generated code:
+
+```asm
+; repro-p5-null-fold.ll  (the front end's ptrtoint/zext/inttoptr form)
+s_cmp_lg_u32 0, 0                                     ; is the offset null?
+s_cselect_b32 s4, 0, -1                               ; yes -> -1 (private null)
+v_mov_b32_e32 v1, s4
+buffer_store_dword v0, v1, s[0:3], 0 offen offset:4    ; indexed store, v1 = 0xFFFFFFFF
+```
+
+versus the same operation written correctly (`repro-p5-correct.ll` in this directory):
+
+```asm
+; addrspacecast ptr addrspace(5) %a to ptr
+buffer_store_dword v0, off, s[0:3], 0 offset:4        ; direct addressing, no index, no cselect
+```
+
+**So this is not an LLVM bug.** The `s_cselect ... -1` is the required null-preserving cast; the
+back end is faithfully implementing what the IR asks for. The defect is that the IR asks for the
+wrong thing.
+
+This also explains the entry's original observation that CCE 19.0.0 and 21.0.2 both emit it and
+that whether a build faults depends only on frame layout: the sequence is *always* wrong, but it
+only misbehaves when an object actually lands at scratch offset 0. CCE 19 was lucky, not correct.
+
+### Fix
+
+Emit `addrspacecast ptr addrspace(5) %p to ptr` rather than
+`inttoptr (zext (ptrtoint %p))`. The control file shows the corrected form is also **better
+code** — the null check and the index register both disappear, leaving direct `off` addressing.
+
+### Contrast with the other CCE 21 entries
+
+Unlike `../instcombine-phi-addrspace-cast` (fixed upstream, backport `6d033abb7`) and
+`../lld-agpr-mfma-assert` (fixed in LLVM 22), there is **nothing upstream to backport here** —
+the LLVM side is correct. This one has to be fixed in CCE's Fortran front end, like
+`../promote-alloca-dropped-store`, whose divergence is also CCE-side.
