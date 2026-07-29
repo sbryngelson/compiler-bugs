@@ -9,6 +9,66 @@ Most of these were found moving MFC from **CCE 19.0.0 + ROCm 6.3.1 (`cpe/25.03`)
 **CCE 21.0.2 + ROCm 7.2.0 (`cpe/26.03`)**. Offload is OpenACC (`-hacc`) and OpenMP
 target (`-homp`); both are affected unless noted.
 
+
+## CCE 21.0.2 status at a glance
+
+CCE 21.0.2 states it is *"LLVM 21 base (merges up to Dec 12, 2025 — LLVM version 21.1.8)"*.
+Because `llvmorg-21.1.8` is a real upstream tag, every claim below is checkable with
+`git merge-base --is-ancestor <commit> llvmorg-21.1.8`.
+
+### Fixes that exist upstream — backport these
+
+| defect | upstream fix | landed | vs CCE cutoff | size |
+|---|---|---|---|---|
+| [lld-agpr-mfma-assert](lld-agpr-mfma-assert) | [`30007a541493`](https://github.com/llvm/llvm-project/pull/153915) | 2025-08-16 | **4 months before** | 3 lines + test |
+| [promote-alloca-dropped-store](promote-alloca-dropped-store) | [`b965f265388a`](https://github.com/llvm/llvm-project/pull/157682) | 2025-09-10 | **3 months before** | `udivrem`→`sdivrem` |
+| [instcombine-phi-addrspace-cast](instcombine-phi-addrspace-cast) | [`6d033abb7`](https://github.com/llvm/llvm-project/pull/181064) | 2026-02-15 | 2 months after | 3-line type guard |
+
+**Two of these three were fixed upstream *before* CCE 21.0.2's own merge cutoff and were not
+picked up.** Both are small, self-contained, and ship with upstream regression tests. That is a
+different problem from "the compiler has bugs" — it suggests the branch is not tracking AMDGPU
+back-end fixes.
+
+The AGPR one is the highest-value single change in this directory. Its absence forces
+`-mattr=-mai-insts`, which disables AGPRs on gfx90a's unified register file, costing **29x more
+scratch** and a **61% slowdown** on MFC's IGR solver. Three lines of upstream code recover it.
+
+### Defects with no upstream fix — these are CCE's own
+
+| defect | layer | mechanism |
+|---|---|---|
+| [defaultmap-zeroes-resident-arrays](defaultmap-zeroes-resident-arrays) + [omp-defaultmap-scalar-override](omp-defaultmap-scalar-override) | Fortran OpenMP lowering | one defect, two faces: a `defaultmap` clause privatizes a scalar carrying an explicit `map(tofrom:)`; the atomic then targets `addrspace(5)` |
+| [defaultmap-overrides-private](defaultmap-overrides-private) | host runtime | *distinct* from the above — device IR is identical across arms; a present-table lookup is issued for an explicitly-`private()` variable |
+| [private-flat-pointer](private-flat-pointer) | Fortran front end | private→flat via `ptrtoint`/`zext`/`inttoptr` drops the scratch aperture, so offset 0 is indistinguishable from null. **LLVM is correct here** |
+| [explicit-shape-dummy-lost-writes](explicit-shape-dummy-lost-writes) | Fortran front end | no extent emitted for an explicit-shape dummy → 0-byte map → runtime returns the host pointer |
+| [inlinenever-ignored-device](inlinenever-ignored-device) | Fortran front end | `!DIR$ INLINENEVER` accepted, then emitted with `alwaysinline` |
+
+### Belongs upstream, not to HPE
+
+| defect | filed |
+|---|---|
+| [mir-roundtrip-bb-name](mir-roundtrip-bb-name) | [llvm#212785](https://github.com/llvm/llvm-project/issues/212785) — reproduces byte-identically on stock LLVM 22 |
+
+### Closed / historical
+
+| entry | why |
+|---|---|
+| [cce21-runtime-failures](cce21-runtime-failures) | all 21 failures attributed to the defects above; MFC now passes 627/627 on both backends |
+| [lld-infer-address-spaces-cce20](lld-infer-address-spaces-cce20) | CCE 20.x only; not a target |
+| [contiguous-mix-dropped-stores](contiguous-mix-dropped-stores) | fixed in CCE 20.0.0 |
+
+### How these were verified
+
+Reproducers are run against every toolchain on the machine — CCE 19.0.0 / 20.0.0 / 20.0.2 /
+21.0.0 / 21.0.2 and the ROCm-shipped LLVM 20 / 22 / 23 — so "fixed in LLVM 22" is measured, not
+inferred. Where a pass is involved, the triage confirms the pass actually *runs* in the passing
+arm (`-debug-pass=Structure`), because a silently dropped pass looks identical to a fix.
+
+`extract-device-ir.sh` (in several entries) pulls the device IR CCE hands to the AMDGPU pipeline
+out of the `.cray.llvm.offloading` ELF section — `-plugin-opt=save-temps` does **not** work for a
+direct `ftn` invocation, and that was the blocker on IR-level analysis for a long time.
+
+
 ## Current defects
 
 | Directory | Defect | CCE | Severity | Reproducer |

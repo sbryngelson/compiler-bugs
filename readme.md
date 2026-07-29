@@ -62,6 +62,32 @@ loss), [#1572](https://github.com/MFlowCode/MFC/pull/1572) (Riemann hot-path dec
 
 Open: [#1628](https://github.com/MFlowCode/MFC/pull/1628).
 
+
+## Headline: two CCE 21 defects have upstream fixes that predate CCE's own merge cutoff
+
+CCE 21.0.2 is built on `llvmorg-21.1.8` (its module `help` text states *"merges up to Dec 12,
+2025"*). Two of its three back-end defects were already fixed upstream **before** that date:
+
+| defect | upstream fix | landed | vs cutoff |
+|---|---|---|---|
+| [AGPR-Copy-MFMA assert](cce/lld-agpr-mfma-assert) | [`30007a541493`](https://github.com/llvm/llvm-project/pull/153915) | 2025-08-16 | 4 months before |
+| [promote-alloca dropped store](cce/promote-alloca-dropped-store) | [`b965f265388a`](https://github.com/llvm/llvm-project/pull/157682) | 2025-09-10 | 3 months before |
+| [InstCombine PHI addrspace cast](cce/instcombine-phi-addrspace-cast) | [`6d033abb7`](https://github.com/llvm/llvm-project/pull/181064) | 2026-02-15 | 2 months after |
+
+Verifiable in one command each, since `llvmorg-21.1.8` is a real tag:
+
+```console
+$ git merge-base --is-ancestor 30007a541493 llvmorg-21.1.8   # false -- absent from CCE's base
+$ git merge-base --is-ancestor 30007a541493 llvmorg-22.1.0   # true
+```
+
+The AGPR one matters most: its absence forces `-mattr=-mai-insts`, which disables AGPRs on
+gfx90a's unified register file and costs **29x scratch** and a **61% slowdown** on a real
+solver. Three lines of upstream code recover it.
+
+See [cce/](cce) for the full status table, including the five defects that are CCE's own and
+have no upstream fix.
+
 ## Upstream LLVM
 
 Defects reproducing on stock upstream LLVM rather than a vendor fork — filed with
