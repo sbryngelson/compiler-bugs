@@ -258,3 +258,40 @@ be read as "still broken" or "now fixed".
 
 That is worth stating plainly: an unscoreable reproducer is close to no reproducer. The newer
 entries in this directory were all written to self-verify for exactly this reason.
+
+## Running a reproducer: the exit-code convention
+
+Every reproducer that can score itself follows one rule:
+
+> **Exit 0 means reality matched what its README documents.** For an unfixed defect, that
+> means the bug still reproduces. Nonzero means something changed and a human should look.
+
+| exit | meaning | what to do |
+| --- | --- | --- |
+| 0 | as documented — the defect is still present | nothing; this is the steady state |
+| 1 | deviation — often a fix, but *verify* before recording one | diff against the committed reference output, then update the README |
+| 2 | inconclusive — nothing built, ran, or was found | fix the environment; this is **not** a statement about the compiler |
+
+This is deliberately not "exit 1 = bug found". These files exist to answer *"has the vendor
+fixed it yet?"* across compiler upgrades, so the useful signal is **change**, not badness. A
+green run after a CCE upgrade means nothing moved; a red run is the thing worth reading.
+
+Exit 2 is separated from 1 on purpose. Most of these need a very specific environment — the
+right CCE, `craype-accel-amd-gfx90a` loaded (sometimes even when nothing launches a kernel),
+and for the runtime ones a real GPU. A missing module makes a defect *disappear*, which is
+indistinguishable from a fix if the harness only has pass/fail. `lib/guard.sh` exists for
+this: it checks the environment up front and calls `guard_fatal` rather than letting a run
+report a clean bill of health it did not earn.
+
+### Controls are mandatory
+
+Every reproducer here pairs the failing case with at least one control that must come out
+**correct** in the same run — an assumed-shape dummy next to the explicit-shape one, an
+explicit `private(all)` next to `defaultmap`, an OpenACC arm next to the OpenMP arm. If a
+control fails, the harness reports inconclusive instead of claiming a bug.
+
+That rule is not theoretical. Reproducers in this tree were twice recorded as proving
+something they did not, because every arm was failing for an environmental reason and the
+comparison was vacuous. `contiguous-mix-dropped-stores` also ships a *negative* control: run
+it with the `v1_*` sources and it must report FIXED. A harness that cannot produce both
+verdicts has not been shown to distinguish them.

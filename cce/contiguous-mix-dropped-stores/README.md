@@ -171,8 +171,8 @@ arm reported a build failure. Recorded so the next person does not read that as 
 
 | exit | verdict | meaning |
 | --- | --- | --- |
-| 1 | BUG PRESENT | at least one of the four `-Oipa0` placements corrupted the ghost cells |
-| 0 | FIXED | every runnable config kept them intact |
+| 0 | BUG PRESENT | at least one of the four `-Oipa0` placements corrupted the ghost cells — the documented state |
+| 1 | FIXED | every runnable config kept them intact — a deviation from the documented state |
 | 2 | INCONCLUSIVE | nothing built or ran — an environment problem, not a compiler result |
 
 Measured on CCE 19.0.0 + `craype-accel-amd-gfx90a`:
@@ -183,10 +183,10 @@ $ ./build_and_run.sh                            # the bug
 default / -Oipa0     ghosts OK
 default / default    *** GHOSTS CORRUPTED ***
 -Oipa0 / -Oipa0      ghosts OK
-VERDICT: BUG PRESENT -- 2/4 configs corrupted the ghost cells.      # exit 1
+VERDICT: BUG PRESENT (as documented) -- 2/4 configs corrupted the ghost cells.   # exit 0
 
 $ ./build_and_run.sh v1_callee.f90 v1_caller.f90   # the contiguous-everywhere fix
-VERDICT: FIXED -- all 4 runnable configs kept the ghost cells intact.  # exit 0
+VERDICT: FIXED -- all 4 runnable configs kept the ghost cells intact.            # exit 1
 ```
 
 The second run is the **negative control**, and it matters: it proves the harness can
@@ -197,3 +197,7 @@ indistinguishable from a broken one.
 Note which side fixes it. Disabling interprocedural analysis on the **caller** (`default /
 -Oipa0`) hides the bug; disabling it on the **callee** alone does not. That is the direction
 the bad analysis flows.
+
+Exit codes follow the repo-wide convention: **0 means reality matched this document**
+(the defect is still present), nonzero means something changed and needs a human.
+See `../README.md`.

@@ -102,3 +102,24 @@ reduced at the IR level instead.
 **Workaround:** quote the name, or rename the blocks before reduction (`opt -metarenamer`, or
 strip names with `opt -strip`), at the cost of losing the source correlation that makes the
 reduction readable.
+
+## Verdict
+
+`run.sh` scores itself and exits 0 when the defect is present as documented (see
+`../README.md` for the convention). Every probed toolchain must both emit an unquoted
+basic-block name containing a comma **and** then fail to re-parse it:
+
+```
+CCE21.0.2   emitted:   bb.1.,   re-parse rc=1  error: ...:170:8: expected ...
+LLVM22      emitted:   bb.1.,   re-parse rc=1  error: ...:171:8: expected ...
+LLVM20      emitted:   bb.1.,   re-parse rc=1  error: ...:167:8: expected ...
+RESULT: BUG PRESENT -- all 3 toolchain(s) fail to re-parse their own MIR.
+```
+
+Both halves are required. A re-parse failure with no comma in the emitted name is a
+different bug, and the script does not count it — otherwise any unrelated MIR parser error
+would be scored as this defect.
+
+Unlike the rest of this directory, this one is **not** CCE-specific: stock LLVM 20 and 22
+fail identically, which is why it is filed upstream as llvm/llvm-project#212785 rather than
+sent to OLCF. The CCE column is here only to show CCE inherits it.

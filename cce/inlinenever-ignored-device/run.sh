@@ -44,15 +44,16 @@ if [ "$v" -eq 0 ]; then
     echo "         statement about INLINENEVER. Check steps 1-2 above."
     exit 2
 elif [ "$n" -eq 0 ] && [ "$c" -eq 0 ]; then
-    echo "VERDICT: BUG PRESENT -- INLINENEVER silently ignored on the device."
+    echo "VERDICT: BUG PRESENT (as documented) -- INLINENEVER silently ignored on the device."
     echo "         s_leaf is not a device symbol (0) and the image contains no calls (0),"
     echo "         yet $v arithmetic ops are present: the body was inlined into the kernel."
     echo "         ftn accepted the directive in step 1 without a diagnostic."
-    exit 1
+    exit 0
 elif [ "$n" -ge 1 ] && [ "$c" -ge 1 ]; then
     echo "VERDICT: FIXED -- s_leaf survives as a callable device function"
     echo "         ($n symbol(s), $c call site(s)); INLINENEVER is honoured."
-    exit 0
+    echo "         This DEVIATES from the documented behaviour; confirm it is a real fix."
+    exit 1
 else
     echo "VERDICT: PARTIAL -- s_leaf symbols=$n, call instructions=$c."
     echo "         A symbol with no calls (or calls with no symbol) means the directive"

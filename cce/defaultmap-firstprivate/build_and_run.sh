@@ -67,13 +67,14 @@ if printf '%s\n' "${V[@]}" | grep -q build; then
     exit 2
 elif [ "${V[0]}" = correct ] && [ "${V[2]}" = correct ] && [ "${V[1]}" = wrong ]; then
     n=0; for k in 3 4 5 6; do [ "${V[$k]}" = wrong ] && n=$((n+1)); done
-    echo "VERDICT: BUG PRESENT -- defaultmap(firstprivate:scalar) is wrong while the"
+    echo "VERDICT: BUG PRESENT (as documented) -- defaultmap(firstprivate:scalar) is wrong while the"
     echo "         explicit private(all) and firstprivate(all) spellings of the SAME"
     echo "         scalars are both correct. Wrong in $n/4 robustness configs too."
-    exit 1
+    exit 0
 elif [ "${V[0]}" = correct ] && [ "${V[1]}" = correct ] && [ "${V[2]}" = correct ]; then
     echo "VERDICT: FIXED -- defaultmap(firstprivate:scalar) now matches the explicit spellings."
-    exit 0
+    echo "         This DEVIATES from the documented behaviour; confirm it is a real fix."
+    exit 1
 else
     echo "VERDICT: INCONCLUSIVE -- private=${V[0]} defaultmap=${V[1]} firstprivate=${V[2]}."
     echo "         The controls are supposed to be correct; if they are not, the"

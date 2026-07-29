@@ -249,8 +249,8 @@ report the opposite.
 
 | exit | verdict | meaning |
 | --- | --- | --- |
-| 1 | BUG PRESENT | no `s_leaf` device symbol **and** no call instructions, but the leaf's arithmetic is in the kernel — it was inlined |
-| 0 | FIXED | `s_leaf` survives as a callable device function (symbol + call site) |
+| 0 | BUG PRESENT | no `s_leaf` device symbol **and** no call instructions, but the leaf's arithmetic is in the kernel — it was inlined. The documented state |
+| 1 | FIXED | `s_leaf` survives as a callable device function (symbol + call site) — a deviation from the documented state |
 | 2 | INCONCLUSIVE / PARTIAL | no arithmetic found at all (nothing built or extracted), or a symbol with no calls |
 
 The arithmetic count is the guard against a false pass. If the device image were empty or
@@ -265,7 +265,7 @@ rc=0                                    # directive accepted, no diagnostic
 device symbols matching s_leaf: 0       # expected >=1 if honoured
 call instructions: 0                    # nothing was left to call
 v_ arithmetic ops in kernel: 83         # the body is here, inlined
-VERDICT: BUG PRESENT                                                   # exit 1
+VERDICT: BUG PRESENT (as documented)                                   # exit 0
 ```
 
 The `rc=0` in step 1 is half the complaint: `ftn` neither honours `!DIR$ INLINENEVER` on a
@@ -274,3 +274,7 @@ least be actionable.
 
 See also `host-cpu-control.f90` — the same directive **is** honoured on a host CPU build,
 so this is device lowering specifically, not a directive the front end never understood.
+
+Exit codes follow the repo-wide convention: **0 means reality matched this document**
+(the defect is still present), nonzero means something changed and needs a human.
+See `../README.md`.

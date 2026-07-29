@@ -69,14 +69,15 @@ if [ "$fail" -gt 0 ] && [ "$((bad+good))" -eq 0 ]; then
     echo "         even though nothing launches a kernel)."
     exit 2
 elif [ "$bad" -gt 0 ]; then
-    echo "VERDICT: BUG PRESENT -- $bad/4 configs corrupted the ghost cells."
+    echo "VERDICT: BUG PRESENT (as documented) -- $bad/4 configs corrupted the ghost cells."
     echo "         Same source, same writes; only the -Oipa0 placement differs, so the"
     echo "         difference is interprocedural analysis dropping stores across the"
     echo "         contiguous / non-contiguous dummy mismatch."
     [ "$fail" -gt 0 ] && echo "         ($fail config(s) did not build -- see rows above.)"
-    exit 1
+    exit 0
 else
     echo "VERDICT: FIXED -- all $good runnable configs kept the ghost cells intact."
+    echo "         This DEVIATES from the documented behaviour; confirm it is a real fix."
     [ "$fail" -gt 0 ] && echo "         ($fail config(s) did not build -- coverage is incomplete.)"
-    exit 0
+    exit 1
 fi

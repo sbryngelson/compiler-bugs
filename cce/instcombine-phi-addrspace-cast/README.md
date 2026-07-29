@@ -286,3 +286,24 @@ application and all failed, consistently with the above:
 No Fortran construct selects which load form the front end emits for a module array, so
 no source change removes the mixed-address-space PHI. That leaves the plugin flags in §4
 until this is fixed in the compiler.
+
+## Verdict
+
+`run.sh` scores itself and exits 0 when the defect is present as documented (see
+`../README.md` for the convention). Both arms must abort with rc=134:
+
+```
+  AS DOCUMENTED    CCE 21.0.2 opt asserts on -passes=instcombine (got: 134)
+  AS DOCUMENTED    still asserts with -instcombine-max-num-phis=0 (got: 134)
+RESULT: BUG PRESENT -- asserts as documented, and the phi-count flag does not avoid it.
+```
+
+The second arm is the load-bearing one. `-instcombine-max-num-phis=0` clears the crash on
+the large application kernel this was reduced from, so it is easy to mistake for a
+workaround; on the minimal case one PHI is still enough to reach the invalid cast. If that
+arm ever returns 0 while the first still asserts, the flag became a real mitigation and this
+README needs rewriting.
+
+Step 3 is triage, not a verdict: ROCm 6.3.1 (LLVM 18) and ROCm 7.2.0 (LLVM 22) both return
+rc=0. Upstream LLVM does **not** assert here — only CCE 21.0.2's clang-21-based `opt` does,
+which is what makes this a missed backport rather than a live upstream bug.
