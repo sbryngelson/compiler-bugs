@@ -18,7 +18,7 @@ listing, and compiles cleanly.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed |
+| Vendor | Filed with OLCF/HPE 2026-07-29 — case ID pending |
 | Blocks | [`../instcombine-phi-addrspace-cast`](../instcombine-phi-addrspace-cast) — the source-level workaround for that abort depends on this directive working |
 
 ## 1. Files

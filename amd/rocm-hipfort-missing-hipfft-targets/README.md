@@ -22,7 +22,7 @@ that component is absent, and hipfft is the **only** component for which the two
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | none filed |
+| Vendor | Filed via OLCF 2026-07-29 — case ID pending; ROCm packaging, for AMD rather than HPE |
 
 ## 1. Symptom
 
