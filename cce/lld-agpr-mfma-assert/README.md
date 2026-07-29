@@ -1,7 +1,7 @@
 # Cray CCE 21.x: `lld` asserts in "AMDGPU Rewrite AGPR-Copy-MFMA" during device LTO
 
 > **Severity:** Abort (blocks all linking)  
-> **Fix belongs to:** **Backport** — fix exists in LLVM 22  
+> **Fix belongs to:** **Backport [`30007a541493`](https://github.com/llvm/llvm-project/pull/153915)** — 3-line guard, absent from CCE's LLVM 21.1.8 base  
 > **Status:** Highest-value fix: the workaround it forces (`-mattr=-mai-insts`) disables AGPRs and costs 29x scratch and 61% on MFC's IGR solver.
 
 **Status: confirmed on CCE 21.0.0 and 21.0.2. Root-caused — the pass gates on AGPRs being
@@ -509,3 +509,57 @@ Our reproducer passes on LLVM 22, so whatever is needed is already in that branc
 above has been confirmed as *the* fix, and the merged one (#190719) has a different symptom
 (verifier error vs `SlotIndex` assertion). Identifying the precise commit would need a bisect
 across LLVM 21.x→22, which needs a build environment not available here.
+
+
+## Upstream fix identified: `30007a541493` (llvm/llvm-project#153915)
+
+**"AMDGPU: Fix crash in rewrite AGPR copy MFMA pass on dead valnos"**, 2025-08-16. The entire
+change to the pass is three lines:
+
+```diff
+@@ -147,6 +147,9 @@ bool AMDGPURewriteAGPRCopyMFMAImpl::run(MachineFunction &MF) const {
++      if (VNI->isPHIDef() || VNI->isUnused())
++        continue;
++
+```
+
+### Why this is exactly our assertion
+
+`SlotIndexes.h:96` in the 21.1.8 tree is:
+
+```cpp
+IndexListEntry* listEntry() const {
+  assert(isValid() && "Attempt to compare reserved index.");
+  return lie.getPointer();
+}
+```
+
+A value number marked **unused** (`VNI->isUnused()`) has an *invalid* definition `SlotIndex`.
+The pass iterated such a valno and dereferenced its def index, tripping `isValid()`. The guard
+skips dead and PHI-defined valnos before that happens.
+
+### Verified against the exact CCE base
+
+CCE 21.0.2 states *"LLVM 21 base (merges up to Dec 12, 2025 — LLVM version 21.1.8)"*, and
+`llvmorg-21.1.8` is a tag in upstream, so this is checkable rather than inferred:
+
+```console
+$ git merge-base --is-ancestor 30007a541493 llvmorg-21.1.8   # -> false
+$ git merge-base --is-ancestor 30007a541493 llvmorg-22.1.0   # -> true
+```
+
+**Absent from 21.1.8, present in 22.1.0** — which is precisely the empirical triage above
+(asserts on CCE 21.0.2, clean on LLVM 22 with the pass confirmed enabled). Note the fix predates
+CCE's own merge cutoff by four months, so it was available and simply not picked up; this is a
+missed backport rather than a timing problem.
+
+### The ask, now concrete
+
+**Backport `30007a541493`.** Three lines, self-contained, with an upstream regression test
+(`llvm/test/CodeGen/AMDGPU/av-split-dead-valno-crash.ll`). It removes the need for
+`-mattr=-mai-insts`, which is the only thing standing between us and the 61% `igr` regression
+documented above — making this the highest-value single change of all the CCE 21 defects.
+
+Other commits to this pass in the 21.1.8→22.1.0 window, none of which match this symptom:
+`9a293530d989`, `ff5f396dacc8`, `156f3fce5449`, `eefad7438cf1`, `085471d777a2`, `fdede21ddf05`,
+`da8f692e3e6e`, `babdad3fdbc6`, `497d648fcc09`, `8a3891ceadad`, `2183846a15a0`.
