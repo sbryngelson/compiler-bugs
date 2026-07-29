@@ -8,26 +8,66 @@ long time to work out.
 
 ## The stages
 
+`ftn -v` shows the real phase chain — it is **not** a single compiler:
+
 ```
  Fortran source
       |
       v
- [1] CCE Fortran front end          <-- proprietary; does its OWN inlining and optimisation
-      |                                 emits LLVM IR with Cray-specific metadata
+ [1] ftnfe        7.4 MB, ZERO llvm:: symbols
+      |           Cray's own Fortran front end. Emits Cray's proprietary "PL" IR into
+      |           a /tmp/pe_<pid>/pldir directory. Knows the source directives
+      |           (7 INLINENEVER strings) and records inlining in PL line tables
+      |           (PL_write_inline_line_file, PL_line_is_inlined, ...).
       v
- [2] .cray.llvm.offloading section  <-- device IR, stored in the host .o
-      |                                 wrapped in an LLVM OffloadBinary (magic 0x10FF10AD)
+ [2] optcg        134 MB, 5781 LLVM symbols
+      |           Reads pldir. This is where LLVM lives: LLVM's inliner
+      |           (PriorityInlineOrder, InlineCostCallAnalyzer, AlwaysInlinerLegacyPass)
+      |           AND the AMDGPU-specific AMDGPUAlwaysInline ("Inline All Functions").
+      |           Emits the device IR into .cray.llvm.offloading and host asm.
       v
- [3] lld + LTO (cce-clang)          <-- CCE's own LLVM 21.1.8; runs the AMDGPU pipeline
-      |                                 controlled by CRAY_CCE_LLD_ARGS
+ [3] as           assembles the host side
+      |
       v
- AMDGPU code object (gfx90a)
+ [4] lld + LTO    cce-clang's LLVM 21.1.8; runs the AMDGPU pipeline on the device IR.
+                  The only stage with a supported option hook: CRAY_CCE_LLD_ARGS.
 ```
 
-**Stage 1 is where several defects live, and it is invisible to every LLVM-level flag.** By the
-time anything reaches stage 3, decisions taken in stage 1 are already baked into the IR.
+Verified:
+
+```console
+$ nm -C .../cce/x86_64/bin/ftnfe | grep -c "llvm::"      # 0
+$ nm -C .../cce/x86_64/bin/optcg | grep -c "llvm::" ...  # 5781 inline/module symbols
+```
+
+### Correction to an earlier reading
+
+An earlier version of this document said the inlining happens "before LLVM sees anything". That
+is **not right**. `optcg` *is* LLVM-based. The accurate statement is that the inlining happens
+**inside `optcg`, before the IR is written to the offload section** — so it is already done by
+the time stage 4 (`lld`/LTO) runs, which is the only stage users can pass options to.
+
+The distinction matters: this is plausibly LLVM's own `AMDGPUAlwaysInline` pass (present in
+`optcg`) doing exactly what it says — "AMDGPU Inline All Functions" — rather than a bespoke Cray
+transform. If so, the defect is that CCE runs an inline-everything pass on device code and the
+Fortran directive never becomes a `noinline` attribute to stop it.
+
+### There is no option hook into stage 2
+
+This is what makes it unfixable from outside. Every attempt to reach `optcg`'s LLVM:
+
+| attempt | result |
+| --- | --- |
+| `ftn -mllvm -amdgpu-always-inline=false` | `ftn-2105 ERROR in command line` |
+| `ftn -h llvm_options=...` | `ftn-78 ERROR in command line` |
+| an `optcg` env hook analogous to `CRAY_CCE_LLD_ARGS` | none found — the only `CCE_*` vars are `CCE_DECLARE_TARGET_AS_LINK` and `CCE_LLVM_NVPTX` |
+
+`CRAY_CCE_LLD_ARGS` reaches **stage 4 only**. Anything decided in stage 2 — including all
+inlining — is beyond reach. That is why the three workarounds in MFC's `toolchain/modules` are
+all `-plugin-opt=` flags: stage 4 is the only place a flag can be applied.
 
 ### Getting the IR out (stage 2)
+
 
 `-plugin-opt=save-temps` works only when the link is driven by CMake. For a direct
 `ftn -o exe file.f90` it silently produces nothing. The IR is always retrievable from the object
@@ -119,16 +159,18 @@ Compile the same source at each optimisation level and count calls in the **pre-
 | 2 | 0 | 5 |
 | 3 | 0 | 5 |
 
-At `-O1` and above the leaf is already inlined *before any LLVM pass runs*. A standalone
+At `-O1` and above the leaf is already inlined by the time the IR reaches the offload section — i.e. during stage 2, inside `optcg`. A standalone
 definition is still emitted, carrying `alwaysinline`, but nothing calls it — it is a leftover.
 
 Two consequences:
 
-1. **`!DIR$ INLINENEVER` cannot work on device routines**, because the front end's own inliner
-   discards it. See [`inlinenever-ignored-device`](inlinenever-ignored-device) — the same
+1. **`!DIR$ INLINENEVER` cannot work on device routines.** Both `ftnfe` and `optcg` contain the
+   directive's name as a string (7 and 4 occurrences), so it is parsed — but it never becomes a
+   `noinline` attribute on the device function, and `optcg`'s inliner proceeds. See [`inlinenever-ignored-device`](inlinenever-ignored-device) — the same
    directive *is* honoured for host code in the same compilation, which is what makes it a
    defect rather than an unimplemented feature.
-2. **No LLVM-level flag can restore the call.** `--always-inline`, attribute rewriting,
+2. **No user-reachable flag can restore the call.** Stage 2 has no option hook at all (see
+   above), and by stage 4 the inlining is already in the IR. `--always-inline`, attribute rewriting,
    `-plugin-opt` knobs — all of them operate on IR in which the inlining has already happened.
    Verified: substituting `noinline` for `alwaysinline` in the IR changes nothing, because there
    is no call site left to preserve.
