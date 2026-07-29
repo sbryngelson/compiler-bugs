@@ -165,3 +165,44 @@ Unlike `../instcombine-phi-addrspace-cast` (fixed upstream, backport `6d033abb7`
 `../lld-agpr-mfma-assert` (fixed in LLVM 22), there is **nothing upstream to backport here** —
 the LLVM side is correct. This one has to be fixed in CCE's Fortran front end, like
 `../promote-alloca-dropped-store`, whose divergence is also CCE-side.
+
+## Why there is no Fortran reproducer (attempted, documented)
+
+The reproducers here are hand-written `.ll`. That is deliberate, not laziness — two attempts at
+a self-checking Fortran case both failed to reach the faulty lowering, and the IR says why.
+
+`attempted-fortran-repro.f90` is the closer of the two: a single local array in an
+`!$acc routine seq`, passed by reference to a second seq routine so it cannot be kept in
+registers. Checking the emitted device IR:
+
+| pattern | occurrences |
+| --- | --- |
+| `alloca ... addrspace(5)` | **0** |
+| `ptrtoint ptr addrspace(5)` | 0 |
+| `addrspacecast ptr ... to ptr addrspace(5)` | 0 |
+
+CCE promotes the array out of private memory entirely, so no private pointer is ever converted
+and the defect cannot appear. A simpler variant (constant index, no escape) behaves the same.
+
+The defect needs **all** of:
+
+1. an array that genuinely stays in private (scratch) memory,
+2. placed at frame **offset 0** — which is a register-allocator/frame-layout outcome, not
+   something the source can request, and
+3. a private->flat conversion emitted for it.
+
+Condition 2 is the one that cannot be forced from Fortran. It is also why the original MFC
+occurrence was so hard to pin down, and why CCE 19.0.0 did not fault on the same source: `Y_rs`
+simply was not at offset 0 there. Small changes to the routine move the frame and the symptom
+disappears — which is exactly the property that makes a source-level reproducer unreliable even
+if one were found.
+
+**So the `.ll` files are the reproducer**, and they are the right level for this defect: they
+pin the alloca at offset 0 by construction (`repro-p5-null-fold.ll` has exactly one alloca) and
+remove the frame-layout lottery. `repro-p5-correct.ll` is the control showing the same operation
+via `addrspacecast` producing correct, shorter code.
+
+Recorded so the next person does not spend the afternoon trying to write the Fortran case. If
+one is wanted for a vendor who insists on source, the practical route is to take MFC's
+`m_variables_conversion.fpp` at the commit before the `Y_rs` fix and build it under CCE 19 — but
+that reproduces by luck of frame layout, not by construction.
