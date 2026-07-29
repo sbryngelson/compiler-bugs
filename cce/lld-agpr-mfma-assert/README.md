@@ -418,3 +418,49 @@ different ROCm" is the obvious first suggestion and it does not help.
 practical way to link on CCE 21.x, and it is a global flag. A fix that lets AGPRs remain enabled
 would recover the spilling; narrowing the workaround (per-TU, or only for the kernels that
 trigger the assert) would be the next-best outcome.
+
+## Version triage: LLVM 21-only, and LLVM 22 fixes it
+
+The 667-line reduced reproducer in `repro/` run through every LLVM on the system:
+
+| toolchain | LLVM | AGPR pass runs? | result |
+| --- | --- | --- | --- |
+| **CCE 21.0.2** | **21.1.8** | yes | **assert, `SlotIndexes.h:96`** (rc=134) |
+| ROCm 7.0.2 | 20.0.0 | — | clean |
+| ROCm 7.2.0 | 22.0.0 | **yes** (`-debug-pass=Structure` confirms) | **clean** |
+
+```console
+$ llc -mcpu=gfx90a -filetype=obj repro/reduced-667-line.ll -o /dev/null
+```
+
+The LLVM 22 arm was checked with `-debug-pass=Structure` to confirm
+`AMDGPU Rewrite AGPR-Copy-MFMA` is actually in the pipeline — otherwise "clean" would only mean
+the pass had been dropped. It runs, and completes. So this is a genuine fix, not a skipped pass.
+
+**Candidate upstream fix, not confirmed:**
+[llvm/llvm-project#190719](https://github.com/llvm/llvm-project/pull/190719)
+(`b39dfca39`, relanded as `50241dcd0`, 2026-04-21) — *"Fixed verifier crash because of multiple
+live range components"* in this pass: after replacing spill instructions the replacement
+register may have multiple live range components when the spill slot was stored more than once.
+
+That is the same pass and the same subject matter (spill replacement and live ranges), but the
+**symptom differs** — ours is a `SlotIndex::listEntry()` assertion, theirs a machine-verifier
+"bad machine code" error. Recorded as a lead, not an identification. The empirical triage above
+is the solid part.
+
+## Why this matters more than a link failure
+
+`-mattr=-mai-insts` is the only known way to link on CCE 21.x, and it is **not free**: it
+disables AGPRs on gfx90a's unified register file, costing 29x more scratch on register-heavy
+kernels and a **61% slowdown** on MFC's IGR solver (measured; see above).
+
+Fixing this assert therefore removes the need for the workaround **and** recovers that
+regression. The dependency chain is:
+
+```
+AGPR assert  ->  -mattr=-mai-insts  ->  AGPRs unavailable  ->  scratch spilling  ->  igr +61%
+```
+
+Since LLVM 22 links this reproducer cleanly with the pass enabled, the fix exists upstream. That
+makes this the highest-value backport of the CCE 21 defects: it is the only one whose resolution
+also recovers lost performance.
