@@ -10,6 +10,10 @@ Most of these were found moving MFC from **CCE 19.0.0 + ROCm 6.3.1 (`cpe/25.03`)
 target (`-homp`); both are affected unless noted.
 
 
+**Background:** [`PIPELINE.md`](PIPELINE.md) documents how CCE lowers Fortran to AMD GPU
+code — the front end's own inliner, the `i64` pointer ABI, where the device IR lives and how
+to extract it. Several defects below only make sense against that.
+
 ## CCE 21.0.2 status at a glance
 
 CCE 21.0.2 states it is *"LLVM 21 base (merges up to Dec 12, 2025 — LLVM version 21.1.8)"*.
