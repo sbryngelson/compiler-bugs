@@ -242,3 +242,35 @@ resulting IR, not assume the directive is inert.
 self-control. It reports `differs / differs` — takes effect on both — which is what corrected
 this entry. The harness README documents the three normalization bugs that made earlier runs
 report the opposite.
+
+## Verdict and exit codes
+
+`run.sh` scores itself from the device image and prints a `VERDICT:` line:
+
+| exit | verdict | meaning |
+| --- | --- | --- |
+| 1 | BUG PRESENT | no `s_leaf` device symbol **and** no call instructions, but the leaf's arithmetic is in the kernel — it was inlined |
+| 0 | FIXED | `s_leaf` survives as a callable device function (symbol + call site) |
+| 2 | INCONCLUSIVE / PARTIAL | no arithmetic found at all (nothing built or extracted), or a symbol with no calls |
+
+The arithmetic count is the guard against a false pass. If the device image were empty or
+failed to extract, symbols and calls would both be zero — which looks exactly like the bug.
+Requiring `v > 0` means a zero/zero verdict only counts when the leaf's work is demonstrably
+present in the kernel body.
+
+Measured on CCE 21.0.2:
+
+```
+rc=0                                    # directive accepted, no diagnostic
+device symbols matching s_leaf: 0       # expected >=1 if honoured
+call instructions: 0                    # nothing was left to call
+v_ arithmetic ops in kernel: 83         # the body is here, inlined
+VERDICT: BUG PRESENT                                                   # exit 1
+```
+
+The `rc=0` in step 1 is half the complaint: `ftn` neither honours `!DIR$ INLINENEVER` on a
+device routine nor warns that it is dropping it. An `ftn-790 unknown directive` would at
+least be actionable.
+
+See also `host-cpu-control.f90` — the same directive **is** honoured on a host CPU build,
+so this is device lowering specifically, not a directive the front end never understood.

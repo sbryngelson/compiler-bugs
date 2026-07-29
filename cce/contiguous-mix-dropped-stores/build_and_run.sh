@@ -30,6 +30,7 @@ printf 'ftn: %s\n' "$($FC --version 2>&1 | head -1)"
 printf 'callee=%s caller=%s main=%s\n\n' "$CALLEE" "$CALLER" "$MAIN"
 printf '%-30s %s\n' "callee-ipa / caller-ipa" "result"
 printf '%-30s %s\n' "------------------------------" "------"
+bad=0; good=0; fail=0
 for cfg in "-Oipa0:" ":-Oipa0" ":" "-Oipa0:-Oipa0"; do
     cal="${cfg%%:*}"; oth="${cfg##*:}"
     rm -f ./*.mod ./*.o ./repro
@@ -38,7 +39,44 @@ for cfg in "-Oipa0:" ":-Oipa0" ":" "-Oipa0:-Oipa0"; do
     $FC -em -J. $oth -c "$CALLER" -o caller.o >/dev/null 2>&1
     $FC -em -J. $oth -c "$MAIN" -o main.o >/dev/null 2>&1
     $FC -em -J. $oth mod_state.o callee.o caller.o main.o -o repro >/dev/null 2>&1
-    printf '%-30s %s\n' "${cal:-default} / ${oth:-default}" \
-        "$([ -x ./repro ] && ./repro | tail -1 | sed 's/^ *//' || echo '(build failed)')"
+    if [ -x ./repro ]; then
+        line=$(./repro | tail -1 | sed 's/^ *//')
+        case "$line" in
+            *CORRUPTED*) bad=$((bad+1));;
+            *OK*)        good=$((good+1));;
+            *)           fail=$((fail+1));;
+        esac
+    else
+        line='(build failed)'; fail=$((fail+1))
+    fi
+    printf '%-30s %s\n' "${cal:-default} / ${oth:-default}" "$line"
 done
 rm -f ./*.mod ./*.o ./repro
+
+# ---------------------------------------------------------------------------
+# Aggregate verdict.
+#
+# The four rows differ only in WHERE -Oipa0 is applied. The ghost writes are the
+# same in every one, so a correct compiler gives "ghosts OK" four times. Any
+# CORRUPTED row means interprocedural analysis dropped stores through the
+# contiguous/non-contiguous dummy mismatch -- the row tells you which side
+# needed the analysis disabled to hide it.
+# ---------------------------------------------------------------------------
+echo
+if [ "$fail" -gt 0 ] && [ "$((bad+good))" -eq 0 ]; then
+    echo "VERDICT: INCONCLUSIVE -- $fail/4 configs did not build or run."
+    echo "         Load the env first (and note craype-accel-amd-gfx90a is required"
+    echo "         even though nothing launches a kernel)."
+    exit 2
+elif [ "$bad" -gt 0 ]; then
+    echo "VERDICT: BUG PRESENT -- $bad/4 configs corrupted the ghost cells."
+    echo "         Same source, same writes; only the -Oipa0 placement differs, so the"
+    echo "         difference is interprocedural analysis dropping stores across the"
+    echo "         contiguous / non-contiguous dummy mismatch."
+    [ "$fail" -gt 0 ] && echo "         ($fail config(s) did not build -- see rows above.)"
+    exit 1
+else
+    echo "VERDICT: FIXED -- all $good runnable configs kept the ghost cells intact."
+    [ "$fail" -gt 0 ] && echo "         ($fail config(s) did not build -- coverage is incomplete.)"
+    exit 0
+fi

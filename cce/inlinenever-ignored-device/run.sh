@@ -28,3 +28,34 @@ echo "v_ arithmetic ops in kernel: $v"
 echo
 echo "=== device symbols (only the kernel should appear) ==="
 "$BIN"/llvm-nm device.elf 2>/dev/null | grep " T \| R " | head
+
+# ---------------------------------------------------------------------------
+# Aggregate verdict.
+#
+# If INLINENEVER were honoured on the device, s_leaf would survive as a callable
+# device function: a symbol in the device image AND at least one s_swappc call to
+# it. The directive is silently dropped instead, so we expect neither -- while the
+# leaf's arithmetic is still present, inlined into the kernel body.
+# ---------------------------------------------------------------------------
+echo
+if [ "$v" -eq 0 ]; then
+    echo "VERDICT: INCONCLUSIVE -- no arithmetic found in the device image at all."
+    echo "         The kernel did not build or was not extracted; this is not a"
+    echo "         statement about INLINENEVER. Check steps 1-2 above."
+    exit 2
+elif [ "$n" -eq 0 ] && [ "$c" -eq 0 ]; then
+    echo "VERDICT: BUG PRESENT -- INLINENEVER silently ignored on the device."
+    echo "         s_leaf is not a device symbol (0) and the image contains no calls (0),"
+    echo "         yet $v arithmetic ops are present: the body was inlined into the kernel."
+    echo "         ftn accepted the directive in step 1 without a diagnostic."
+    exit 1
+elif [ "$n" -ge 1 ] && [ "$c" -ge 1 ]; then
+    echo "VERDICT: FIXED -- s_leaf survives as a callable device function"
+    echo "         ($n symbol(s), $c call site(s)); INLINENEVER is honoured."
+    exit 0
+else
+    echo "VERDICT: PARTIAL -- s_leaf symbols=$n, call instructions=$c."
+    echo "         A symbol with no calls (or calls with no symbol) means the directive"
+    echo "         is half-honoured; report both numbers rather than a yes/no."
+    exit 2
+fi

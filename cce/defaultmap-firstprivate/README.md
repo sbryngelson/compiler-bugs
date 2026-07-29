@@ -122,3 +122,35 @@ List the scalars explicitly in `private()` (or `firstprivate()`); do not rely on
 MFC (https://github.com/MFlowCode/MFC). The omitted scalars were per-cell temporaries in the HLL
 / HLLC / LF Riemann kernels (`s_M`, `s_P`, `xi_M`, `xi_P`, and others); the fix in
 MFlowCode/MFC#1588 was to complete the `private()` lists.
+
+## Verdict and exit codes
+
+`build_and_run.sh` compares every variant's checksum against the reference
+`8.040644772571076E+07` (relative tolerance 1e-6; NaN counts as wrong) and prints a
+`VERDICT:` line:
+
+| exit | verdict | meaning |
+| --- | --- | --- |
+| 1 | BUG PRESENT | `defaultmap(firstprivate:scalar)` is wrong while `private(all)` and `firstprivate(all)` are both correct |
+| 0 | FIXED | all three spellings agree |
+| 2 | INCONCLUSIVE | a variant failed to build, or a control came out wrong |
+
+The two controls are the point of the test. `private(all)` and `firstprivate(all)` name the
+**same scalars** that `defaultmap(firstprivate:scalar)` is supposed to cover, so all three
+must agree. When the controls are correct and only `defaultmap` is wrong, the environment is
+fine and the compiler is not — which is why a wrong control reports INCONCLUSIVE (exit 2)
+rather than a bug.
+
+Measured on CCE 19.0.0, one MI250X GCD, `OMP_TARGET_OFFLOAD=MANDATORY`:
+
+```
+  private(all) simd                  checksum =  8.040644772571076E+07   correct
+  defaultmap(fp:scalar) simd         checksum =                    NaN   WRONG
+  firstprivate(all) simd             checksum =  8.040644772571076E+07   correct
+  ... -O2 / -O1 / nosimd / +fp(re)                                       WRONG (4/4)
+VERDICT: BUG PRESENT -- wrong in 4/4 robustness configs too.            # exit 1
+```
+
+`-O1` is worth noting: it gives a finite but ~0.6% wrong answer instead of NaN. Anyone
+checking only for NaN would call `-O1` clean, which is exactly the silent-wrong-answer
+failure mode this repo exists to catch.
