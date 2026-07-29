@@ -61,3 +61,12 @@ loss), [#1572](https://github.com/MFlowCode/MFC/pull/1572) (Riemann hot-path dec
 (`-fopenmp-assume-no-nested-parallelism` on the AMD offload path).
 
 Open: [#1628](https://github.com/MFlowCode/MFC/pull/1628).
+
+## Upstream LLVM
+
+Defects reproducing on stock upstream LLVM rather than a vendor fork — filed with
+llvm/llvm-project, not with HPE/AMD/Intel. See [llvm/](llvm).
+
+| entry | version(s) | status | summary |
+|---|---|---|---|
+| [llvm/mir-unquoted-bb-name](llvm/mir-unquoted-bb-name) | LLVM 21.1.8 and 22.0.0 | draft, not posted | `llc` emits MIR it cannot re-parse when a basic-block name contains a comma. 14-line reproducer; blocks MIR-level bug reduction |

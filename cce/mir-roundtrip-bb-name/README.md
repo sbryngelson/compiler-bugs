@@ -2,7 +2,8 @@
 
 > **Severity:** Tooling only — blocks MIR-level bug reduction, no effect on generated code  
 > **Fix belongs to:** **upstream LLVM** — reproduces on LLVM 22 as well as CCE 21  
-> **Status:** Root-caused and reduced to a 14-line `.ll`. The MIR printer emits block names unquoted.
+> **Status:** Root-caused and reduced to a 14-line `.ll`. The MIR printer emits block names unquoted.  
+> **Upstream:** tracked for filing at [`../../llvm/mir-unquoted-bb-name`](../../llvm/mir-unquoted-bb-name) — issue drafted, not yet posted.
 
 **Status: confirmed. Minor severity — blocks MIR-level debugging, not builds.**
 
