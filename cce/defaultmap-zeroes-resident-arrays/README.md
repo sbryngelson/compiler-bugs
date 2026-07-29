@@ -41,6 +41,37 @@ device reads the arrays correctly and the count is computed correctly. What fail
 arms; the runtime traces are identical apart from allocation addresses, and `CRAY_ACC_DEBUG=3`
 shows nothing amiss, because nothing is wrong with the mapping.
 
+
+## Scope: Fortran front end only — C is unaffected
+
+`dm_min.c` is the same construct in C: an explicitly `map(tofrom:)`-ed scalar counter
+incremented under `#pragma omp atomic`, on a directive carrying
+`defaultmap(tofrom:aggregate)`. It gives the **right answer**:
+
+```console
+$ srun -N1 -n1 ./dm_min_c
+no-defaultmap d1=1024  with-defaultmap d2=1024  (expect 1024 both) PASS
+```
+
+The device IR shows why the two languages differ — they do not share an OpenMP lowering:
+
+| | Fortran (`ftn`) | C (`cc`) |
+| --- | --- | --- |
+| outlined kernel naming | `resident_$ck_L45_1` | `__omp_offloading_...` |
+| the mapped scalar | `%"$_pvt3_d1" = alloca i32` — **the value, privatized** | `%d1.addr = alloca ptr` — a pointer, by reference |
+| atomic update targets | `addrspace(5)` (private) | the mapped global |
+
+C uses the clang/LLVM OpenMP code path; Fortran uses CCE's own (`$_pvt` / `$ck_L` naming).
+The defect is in the latter: it copies the mapped scalar **by value** into private memory when
+a `defaultmap` clause is present, where the C path correctly passes it by reference.
+
+This is useful for triage — it points at CCE's Fortran OpenMP lowering rather than the shared
+offload infrastructure, and it means C/C++ users are not exposed.
+
+*Caveat:* because the two languages use different lowerings, the C arm is a **scope indicator,
+not a strict control**. It shows C is unaffected; it does not prove the two paths would agree
+on any other construct.
+
 ## Relationship to `omp-defaultmap-scalar-override`
 
 This is the **same defect**, and this reproducer is the stronger statement of it. There,
