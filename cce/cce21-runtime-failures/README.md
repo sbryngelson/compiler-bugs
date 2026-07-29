@@ -1,8 +1,27 @@
 # CCE 21.0.2: MFC links but 21 tests fail at runtime on Frontier (MI250X)
 
-**Status: OBSERVED, ATTRIBUTION PENDING. Do not cite these as CCE 21 defects yet — the
-CCE 19.0.0 control run has not completed, and Frontier's GPU CI lane is already
-`continue-on-error` because it has been failing for other reasons.**
+**Status: RESOLVED — all 21 failures attributed, no longer open.** Every failure below traced
+to a specific defect, each now filed separately with a reproducer. With those addressed, MFC
+passes **627/627 on both `--gpu mp` and `--gpu acc`** under CCE 21.0.2. This entry is kept as
+the attribution record; do not cite it as an open defect.
+
+## Resolution
+
+| failures | cause | entry |
+| --- | --- | --- |
+| 60 immersed-boundary aborts (`mp` only) | `defaultmap` privatizes an explicitly-mapped scalar, so a ghost-point count returns 0 and a zero-length allocation follows | [`../defaultmap-zeroes-resident-arrays`](../defaultmap-zeroes-resident-arrays) |
+| 5 residual tolerance failures (both backends) | `AMDGPUPromoteAllocaToVector` drops a store via unsigned byte-offset division | [`../promote-alloca-dropped-store`](../promote-alloca-dropped-store) |
+| device-link failure blocking everything | `AMDGPU Rewrite AGPR-Copy-MFMA` assert | [`../lld-agpr-mfma-assert`](../lld-agpr-mfma-assert) |
+| case-optimized link abort | InstCombine builds a cast across address spaces | [`../instcombine-phi-addrspace-cast`](../instcombine-phi-addrspace-cast) |
+
+Non-compiler causes found in the same investigation, fixed in the application
+(MFlowCode/MFC#1694): QBMM procedures contained in another procedure being called across the
+offload boundary, and IBM dereferencing absent `optional` dummies.
+
+The CCE 19.0.0 control this entry was waiting on **did** complete: CCE 19 passes the same suite,
+and case-optimized `grind` on CCE 21 lands within 3-4% of CCE 19 on three of four benchmarks.
+The one outlier (`igr`, +61%) is not a CCE 21 defect — it is the cost of the `-mattr=-mai-insts`
+workaround for the AGPR assert, measured and documented in that entry.
 
 ## Context
 
