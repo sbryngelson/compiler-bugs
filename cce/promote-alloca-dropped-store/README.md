@@ -238,6 +238,45 @@ case:
   with `e_machine == 224` and trims to `e_shoff + e_shnum*e_shentsize`.
 * Always check the disassembly is non-empty before believing a zero count.
 
+
+## Root-cause attempts — what has been ruled out
+
+Recorded so the next person does not repeat these. **The pass-level cause is not yet
+identified.**
+
+The obvious hypothesis is that `AMDGPUPromoteAllocaToVector` fails to handle the dynamic
+index and silently drops the `insertelement`. That was tested directly by hand-writing the
+IR and running the pass in isolation:
+
+```console
+$ opt -mcpu=gfx90a -passes=amdgpu-promote-alloca -S promote_alloca.ll
+```
+
+`promote_alloca.ll` models `integer :: idx(3)` with three constant stores, one
+runtime-indexed store, and a read-back of element 1. Three encodings of the Fortran
+1-based index were tried:
+
+| index expression | dynamic store preserved? |
+| --- | --- |
+| `add nsw i32 %nd, -1` | **yes** — becomes `insertelement <3 x i32> %2, i32 %val, i32 %off` |
+| `add i32 %nd, -1` (no `nsw`) | **yes** |
+| `add i32 %nd, 1073741823` (`+0x3FFFFFFF`, the form seen in CCE's own bitcode) | **yes** |
+
+In all three the alloca is promoted to a vector **and the dynamic store survives**. So the
+pass handles this shape correctly in isolation, and the standalone IR above does **not**
+reproduce the defect. Whatever triggers it is present in CCE's real output but absent from
+this model — plausibly surrounding context (the `!$acc` outlining, address-space casts, or
+an earlier pass) rather than the index arithmetic alone.
+
+**What would settle it:** the pre-LTO device bitcode for `v_write.f90`, which would show the
+IR as it actually reaches the pass. `CRAY_CCE_LLD_ARGS="-plugin-opt=save-temps"` emits that
+`.bc` when the link is driven by CMake, but **not** for a direct `ftn -o exe file.f90`
+invocation, so it was not obtainable here. Anyone with a way to dump that IR should start
+there and diff it against `promote_alloca.ll`.
+
+The end-to-end evidence for the defect is unaffected by this — the reproducer arms below
+fail deterministically on CCE 21 and pass on CCE 19.
+
 ## Counting the marker in a real build
 
 The index-canonicalization signature is the **instruction form**, not the bare

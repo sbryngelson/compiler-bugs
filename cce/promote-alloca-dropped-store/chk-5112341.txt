@@ -1,0 +1,3 @@
+v_write_chk:    e.g. j=1 got 0 expected 5
+v_lb0_chk: v_lb0 nbad=0 of 64  PASS
+v_read_chk: v_read nbad=0 of 64  PASS
