@@ -76,6 +76,55 @@ Both neighbours are AMD forks rather than pristine upstream, so this is evidence
 rather than proof — but it points at a fix landing upstream between 21 and 22 that
 CCE 21.0.2 predates.
 
+
+## Upstream fix identified: llvm/llvm-project#181064
+
+**Commit `6d033abb7`, 2026-02-15 — "[InstCombine] Avoid invalid bitcast across address spaces in
+`foldIntegerTypedPHI`"** ([#181064](https://github.com/llvm/llvm-project/pull/181064)).
+
+The commit message describes this defect exactly:
+
+> Only use a PtrToInt's source pointer as an available pointer value when its pointer type
+> exactly matches the inttoptr target type. This prevents creating an invalid bitcast between
+> differing address spaces during `foldIntegerTypedPHI`.
+
+The fix is a type guard on the pointer collected as an "available value":
+
+```diff
+-      AvailablePtrVals.emplace_back(PI->getOperand(0));
+-      continue;
++      if (PI->getOperand(0)->getType() == IntToPtr->getType()) {
++        AvailablePtrVals.emplace_back(PI->getOperand(0));
++        continue;
++      }
+```
+
+Without the guard, a `ptrtoint` whose source is `ptr` (generic) is accepted as an available
+value for an `inttoptr` producing `ptr addrspace(1)`, and the fold then emits a `bitcast`
+between the two — which is invalid IR and trips the assertion.
+
+### Why CCE 21.0.2 has it
+
+CCE 21.0.2's module `help` text states: *"LLVM 21 base (merges up to Dec 12, 2025 — LLVM version
+21.1.8)"*. The fix landed **2026-02-15**, two months after that cutoff. Every commit to
+`InstCombinePHI.cpp` after the cutoff was checked; this is the only one touching the defect:
+
+| commit | date | relevant? |
+| --- | --- | --- |
+| `5334c5148` fix O(n^2) in SliceUpIllegalIntegerPHI | 2026-01-12 | no |
+| **`6d033abb7`** avoid invalid bitcast across address spaces | **2026-02-15** | **yes — the fix** |
+| `efcd3b610`, `e9119107c`, `c6e90081a`, `21c75f0b2`, ... | 2026-03+ | no |
+
+This confirms the empirical version triage in §3 (clean on LLVM 22/23, asserts on 21.1.8) and
+supplies the mechanism for it.
+
+### Ask for the vendor
+
+**Backport `6d033abb7` to the CCE 21 branch.** It is a self-contained three-line type guard in
+`InstCombinePHI.cpp` with no dependencies on the surrounding refactors, and it is the only
+change needed — unlike `../promote-alloca-dropped-store`, where the equivalent history walk
+showed the upstream code was *already* correct and the divergence is CCE-side.
+
 ## 4. Workaround — partial, and known to be incomplete
 
 `-plugin-opt=-instcombine-max-num-phis=0` ("Maximum number phis to handle in
