@@ -14,7 +14,9 @@ that component is absent, and hipfft is the **only** component for which the two
 * **Component:** ROCm 7.2.0, `hipfort` CMake package
 * **Severity:** configure-time failure, loud — but the diagnostic points at the *consumer's*
   `find_package` line, not at the incomplete install, so it reads as a user error
-* **Version tested:** `/opt/rocm-7.2.0` (`.info/version` = 7.2.0)
+* **Versions affected:** **7.0.2, 7.1.1, and 7.2.0 all reproduce** — this is not specific to one
+  release. `rocm/7.13.0` ships **no hipfort at all**, so it is unaffected but also unusable for
+  Fortran consumers.
 
 ## Tracking
 
@@ -56,8 +58,17 @@ targets file is a hard error rather than a graceful "component not found".
 
 ## 3. What is actually installed
 
-Every component ships **both** a Fortran module and a targets export — except `hipfft`, which
-ships the module only:
+Reproduced across every ROCm 7.x that ships hipfort:
+
+| ROCm | hipfort present | `hipfort-hipfft-targets.cmake` |
+| --- | --- | --- |
+| 7.0.2 | yes | **missing** |
+| 7.1.1 | yes | **missing** |
+| 7.2.0 | yes | **missing** |
+| 7.13.0 | **no hipfort** | n/a |
+
+Within an affected install, every component ships **both** a Fortran module and a targets export
+— except `hipfft`, which ships the module only:
 
 | component | `hipfort_<c>.mod` | `hipfort-<c>-targets.cmake` |
 | --- | --- | --- |
@@ -93,6 +104,6 @@ Either ship `hipfort-hipfft-targets.cmake`, or drop `hipfft` from
 
 MFC builds its own hipfort, so this is normally masked. It surfaces on any tree where MFC's
 hipfort has not been built and CMake falls back to the system package — the fallback is not
-usable on this ROCm. Relevant because MFC recently switched to deriving the hipfort tag from
+usable on any affected ROCm. Relevant because MFC recently switched to deriving the hipfort tag from
 `ROCM_PATH` (MFlowCode/MFC#1694) specifically to keep hipfort in step with the loaded ROCm
 module.
