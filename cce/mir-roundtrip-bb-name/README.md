@@ -3,7 +3,7 @@
 > **Severity:** Tooling only — blocks MIR-level bug reduction, no effect on generated code  
 > **Fix belongs to:** **upstream LLVM** — reproduces on LLVM 22 as well as CCE 21  
 > **Status:** Root-caused and reduced to a 14-line `.ll`. The MIR printer emits block names unquoted.  
-> **Upstream:** tracked for filing at [`../../llvm/mir-unquoted-bb-name`](../../llvm/mir-unquoted-bb-name) — issue drafted, not yet posted.
+> **Upstream:** tracked for filing at [`../../llvm/mir-unquoted-bb-name`](../../llvm/mir-unquoted-bb-name) — filed as [llvm#212785](https://github.com/llvm/llvm-project/issues/212785).
 
 **Status: confirmed. Minor severity — blocks MIR-level debugging, not builds.**
 
@@ -11,7 +11,7 @@
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
+| Vendor | n/a — upstream LLVM defect, filed as [llvm#212785](https://github.com/llvm/llvm-project/issues/212785) |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) (context) |
 | Found while | reducing [`../lld-agpr-mfma-assert`](../lld-agpr-mfma-assert) |
 ## Symptom

@@ -10,7 +10,7 @@ useful for this, being different major versions from CCE's).
 
 | entry | version(s) | filed | summary |
 |---|---|---|---|
-| [mir-unquoted-bb-name](mir-unquoted-bb-name) | LLVM 21.1.8, 22.0.0 | draft, not yet posted | `llc` emits MIR it cannot re-parse when a basic-block name contains a comma. Blocks `-stop-before` MIR round-tripping, the normal way to reduce a backend bug to a MIR test |
+| [mir-unquoted-bb-name](mir-unquoted-bb-name) | LLVM 21.1.8, 22.0.0 | **[llvm#212785](https://github.com/llvm/llvm-project/issues/212785)** | `llc` emits MIR it cannot re-parse when a basic-block name contains a comma. Blocks `-stop-before` MIR round-tripping, the normal way to reduce a backend bug to a MIR test |
 
 ## Filing checklist
 

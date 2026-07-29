@@ -1,4 +1,5 @@
-<!-- Draft for https://github.com/llvm/llvm-project/issues/new
+<!-- FILED as https://github.com/llvm/llvm-project/issues/212785 on 2026-07-29. Kept as the submitted text.
+     Original draft target:
      Suggested labels: mir, backend:AMDGPU (reproduces on any target), bug
      Review before posting. -->
 

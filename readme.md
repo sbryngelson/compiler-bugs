@@ -69,4 +69,4 @@ llvm/llvm-project, not with HPE/AMD/Intel. See [llvm/](llvm).
 
 | entry | version(s) | status | summary |
 |---|---|---|---|
-| [llvm/mir-unquoted-bb-name](llvm/mir-unquoted-bb-name) | LLVM 21.1.8 and 22.0.0 | draft, not posted | `llc` emits MIR it cannot re-parse when a basic-block name contains a comma. 14-line reproducer; blocks MIR-level bug reduction |
+| [llvm/mir-unquoted-bb-name](llvm/mir-unquoted-bb-name) | LLVM 21.1.8 and 22.0.0 | **[llvm#212785](https://github.com/llvm/llvm-project/issues/212785)** | `llc` emits MIR it cannot re-parse when a basic-block name contains a comma. 14-line reproducer; blocks MIR-level bug reduction |
