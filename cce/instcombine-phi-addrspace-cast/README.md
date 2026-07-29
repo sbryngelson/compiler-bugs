@@ -304,6 +304,25 @@ workaround; on the minimal case one PHI is still enough to reach the invalid cas
 arm ever returns 0 while the first still asserts, the flag became a real mitigation and this
 README needs rewriting.
 
-Step 3 is triage, not a verdict: ROCm 6.3.1 (LLVM 18) and ROCm 7.2.0 (LLVM 22) both return
-rc=0. Upstream LLVM does **not** assert here — only CCE 21.0.2's clang-21-based `opt` does,
-which is what makes this a missed backport rather than a live upstream bug.
+Step 3 is triage, not a verdict — and it needs care, because **the ROCm LLVM builds have
+assertions compiled out**:
+
+| toolchain | version | assertions |
+| --- | --- | --- |
+| CCE 21.0.2 | LLVM 21.1.8 | **yes** |
+| ROCm 6.3.1 / 7.0.2 / 7.2.0 | LLVM 18 / 20 / 22 | **no** |
+
+So `rc=0` from a ROCm `opt` on its own proves nothing: an invalid cast would be built
+silently instead of caught. Comparing an assertions build against non-assertions builds and
+concluding "only CCE is affected" is a vacuous control, and this README previously did
+exactly that.
+
+Re-checked properly with `-passes=instcombine,verify`, all three ROCm builds:
+
+- pass the verifier (`rc=0`), and
+- emit output IR containing **zero** `inttoptr`/`ptrtoint`/`addrspacecast`.
+
+Upstream does not merely fail to notice a bad fold — it never performs it, and the IR it
+produces is valid. That, together with the source inspection above showing the upstream code
+is already correct, is what makes this a CCE-side divergence rather than a live upstream bug.
+The original `rc=0` observation was the right conclusion reached by insufficient evidence.

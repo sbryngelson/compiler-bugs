@@ -606,3 +606,77 @@ what it costs — and that is the thing worth being told about.
 The baseline arm explicitly `unset`s `CRAY_CCE_LLD_ARGS`. MFC's module file exports
 `-mai-insts`, which is precisely what the baseline is a control for; without the unset both
 arms would measure the same thing and the comparison would be vacuous.
+
+## Searching for a cheaper workaround than `-mai-insts`
+
+`-mattr=-mai-insts` is applied **globally, at link time, to every kernel**, to dodge a crash
+in one pass. That is what costs `igr` ~61% (29× scratch growth, measured by
+`run_regpressure.sh`). This section records a search for something narrower.
+
+### There is no finer-grained flag
+
+| lever | finding |
+| --- | --- |
+| gfx90a subtarget features (`llc -mattr=help`) | `mai-insts` is the **only** MFMA/AGPR feature. No finer switch exists at this level. |
+| `llc --help-hidden`, all `--amdgpu-*` options | no option gates the AGPR-Copy-MFMA pass. Only `--amdgpu-mfma-padding-ratio` mentions MFMA at all. |
+
+Ten `llc` flags were swept against the real crashing module. Nine still assert:
+`-amdgpu-attributor-enable=false`, `-amdgpu-enable-rewrite-partial-reg-uses=false`,
+`-amdgpu-dce-in-ra=false`, `-amdgpu-schedule-relaxed-occupancy`,
+`-amdgpu-schedule-metric-bias=100`, `-amdgpu-enable-pre-ra-optimizations=false`,
+`-amdgpu-disable-unclustered-high-rp-reschedule`, `-amdgpu-mfma-padding-ratio=100`.
+
+### The reduced reproducer is not fully faithful — important
+
+`-amdgpu-use-amdgpu-trackers=true` is the one flag that behaves differently, and it is a
+trap:
+
+| module | baseline | `-amdgpu-use-amdgpu-trackers=true` |
+| --- | --- | --- |
+| `repro/reduced-667-line.ll` | assert | **clean** |
+| `repro/crashing_function.bc` | assert | **still asserts** |
+
+So `llvm-reduce` dropped something the real function needs to reach the bad path. Any
+candidate workaround validated only against `reduced-667-line.ll` can be a false positive —
+**check `crashing_function.bc` too**. This is why `repro/run.sh` scores both modules.
+
+### What does work: per-function attributes
+
+Every one of these clears the assert on the **real** `crashing_function.bc`:
+
+| attribute change | result |
+| --- | --- |
+| `"amdgpu-agpr-alloc"="0"` → `"0,0"` or `"0,1"` | clean |
+| `"amdgpu-flat-work-group-size"="1,256"` → `"1,512"` or `"1,1024"` | clean |
+| add `"amdgpu-waves-per-eu"="4,4"` or `"8,8"` | clean |
+
+The kernel as emitted carries `"amdgpu-agpr-alloc"="0"` (min only, max unbounded) and
+`"amdgpu-flat-work-group-size"="1,256"` — exactly the crashing combination.
+
+These are **per-function**, which is the whole point: `-mai-insts` penalises every kernel in
+the program, while an attribute penalises one. If only a handful of kernels crash, the hot
+kernels keep their AGPRs and the `igr` regression does not happen.
+
+### The source-level lever
+
+`amdgpu-flat-work-group-size` is reachable from Fortran. Verified on CCE 21.0.2 — an
+OpenACC `vector_length(512)` clause produces `.max_flat_workgroup_size: 512` in the emitted
+device image, i.e. `"amdgpu-flat-work-group-size"="1,512"`, the variant shown clean above.
+The OpenMP equivalent is `thread_limit(512)`.
+
+So the deployable shape is a `vector_length(512)`/`thread_limit(512)` clause on the crashing
+kernels, with `-mai-insts` dropped entirely.
+
+### What is still unmeasured
+
+Two things gate this from being a recommendation:
+
+1. **How many kernels are affected is unknown.** `lld` aborts at the *first* bad function, so
+   the crash logs in `artifacts/` name exactly one each. The count only emerges by fixing one
+   and re-linking, iteratively. If it is a long tail, per-kernel clauses stop being practical.
+2. **The performance cost is unmeasured.** `vector_length(512)` doubles the work-group size,
+   which changes occupancy and register budget per thread. It is plausibly much cheaper than
+   losing AGPRs program-wide, but "plausibly cheaper" is not a measurement — it needs the same
+   grind comparison used for the `-mai-insts` cost.
+
+Neither is a reason to prefer `-mai-insts`; both are reasons not to quote a number yet.
