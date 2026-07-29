@@ -239,43 +239,88 @@ case:
 * Always check the disassembly is non-empty before believing a zero count.
 
 
-## Root-cause attempts — what has been ruled out
+## Root cause: unsigned division of a negative byte offset
 
-Recorded so the next person does not repeat these. **The pass-level cause is not yet
-identified.**
+**`AMDGPUPromoteAllocaToVector` converts a negative byte-offset GEP into a vector element
+index using an UNSIGNED division.**
 
-The obvious hypothesis is that `AMDGPUPromoteAllocaToVector` fails to handle the dynamic
-index and silently drops the `insertelement`. That was tested directly by hand-writing the
-IR and running the pass in isolation:
+CCE lowers a Fortran 1-based dynamic subscript as a *chained* GEP — a typed element GEP,
+then a separate byte GEP carrying the `-1` adjustment:
 
-```console
-$ opt -mcpu=gfx90a -passes=amdgpu-promote-alloca -S promote_alloca.ll
+```llvm
+%r20 = getelementptr i32, ptr addrspace(5) %idx, i32 %r19   ; + nd elements
+%r21 = getelementptr i8,  ptr addrspace(5) %r20, i32 -4     ; - 1 element, as -4 BYTES
+store i32 %r16, ptr addrspace(5) %r21
 ```
 
-`promote_alloca.ll` models `integer :: idx(3)` with three constant stores, one
-runtime-indexed store, and a read-back of element 1. Three encodings of the Fortran
-1-based index were tried:
+Promoting the alloca to `<3 x i32>` requires folding that byte offset back into an element
+index. The pass divides by the 4-byte element size **unsigned**:
 
-| index expression | dynamic store preserved? |
-| --- | --- |
-| `add nsw i32 %nd, -1` | **yes** — becomes `insertelement <3 x i32> %2, i32 %val, i32 %off` |
-| `add i32 %nd, -1` (no `nsw`) | **yes** |
-| `add i32 %nd, 1073741823` (`+0x3FFFFFFF`, the form seen in CCE's own bitcode) | **yes** |
+```
+want:  -4 / 4          = -1            -> index = nd - 1        = 0   (correct)
+got:   0xFFFFFFFC / 4  = 0x3FFFFFFF    -> index = nd + 0x3FFFFFFF
+```
 
-In all three the alloca is promoted to a vector **and the dynamic store survives**. So the
-pass handles this shape correctly in isolation, and the standalone IR above does **not**
-reproduce the defect. Whatever triggers it is present in CCE's real output but absent from
-this model — plausibly surrounding context (the `!$acc` outlining, address-space casts, or
-an earlier pass) rather than the index arithmetic alone.
+which is exactly what appears in the output:
 
-**What would settle it:** the pre-LTO device bitcode for `v_write.f90`, which would show the
-IR as it actually reaches the pass. `CRAY_CCE_LLD_ARGS="-plugin-opt=save-temps"` emits that
-`.bc` when the link is driven by CMake, but **not** for a direct `ftn -o exe file.f90`
-invocation, so it was not obtainable here. Anyone with a way to dump that IR should start
-there and diff it against `promote_alloca.ll`.
+```llvm
+%1 = add i32 1073741823, %r19          ; 1073741823 = 0x3FFFFFFF
+%2 = insertelement <3 x i32> %0, i32 %r16, i32 %1
+%3 = extractelement <3 x i32> %2, i32 0
+```
 
-The end-to-end evidence for the defect is unaffected by this — the reproducer arms below
-fail deterministically on CCE 21 and pass on CCE 19.
+For `nd = 1` the index is `0x40000000`, far outside a 3-element vector. Per LangRef,
+`insertelement` with an out-of-range index yields **poison**, so `%2` is discarded, the
+following `extractelement` reads the un-updated `%0`, and the store is gone. No diagnostic,
+because from the pass's point of view it emitted a perfectly well-formed `insertelement`.
+
+This explains every observed control:
+
+| arm | GEP shape | result |
+| --- | --- | --- |
+| `v_write` — 1-based, dynamic **write** | typed GEP + `i8 -4` | **FAIL**, store dropped |
+| `v_lb0` — 0-based | no negative byte GEP emitted | PASS |
+| `v_read` — 1-based, dynamic **read** | same chain, but `extractelement` poison index | PASS (reads the constant-index element) |
+
+### Minimal IR reproducer
+
+`pa_min.ll` — 14 lines, no Fortran, no MFC:
+
+```console
+$ opt -mcpu=gfx90a -passes=amdgpu-promote-alloca -S pa_min.ll
+  %1 = add i32 1073741823, %n          ; <-- should be `add i32 %n, -1`
+  %2 = insertelement <3 x i32> %0, i32 %val, i32 %1
+```
+
+Any negative byte-offset GEP onto a promotable alloca reproduces it; the 1-based Fortran
+subscript is just the common way to generate one.
+
+### Suggested fix
+
+Treat the byte offset as **signed** when converting to an element index, and bail out of
+promotion when the offset is not an exact multiple of the element size.
+
+### How to get the IR (this was the hard part)
+
+`-plugin-opt=save-temps` only works when the link is driven by CMake; for a direct
+`ftn -o exe file.f90` it emits nothing. CCE instead stores the device IR in a
+**`.cray.llvm.offloading`** ELF section of the object file, wrapped in an LLVM
+`OffloadBinary` (magic `0x10FF10AD`) with the bitcode at a variable offset. `extract-device-ir.sh`
+in this directory automates it:
+
+```console
+$ ./extract-device-ir.sh v_write.f90 dev.ll
+bitcode at offset 360
+wrote dev.ll
+```
+
+### Ruled out along the way
+
+A single typed `getelementptr [3 x i32], ptr %a, i32 0, i32 %off` — the shape one would
+write by hand — is handled **correctly** by the pass for all of `add nsw %nd, -1`,
+`add %nd, -1`, and even `add %nd, 1073741823`. The defect requires the *chained byte-offset*
+form that CCE actually emits. Modelling the index arithmetic without the byte GEP does not
+reproduce it.
 
 ## Counting the marker in a real build
 
