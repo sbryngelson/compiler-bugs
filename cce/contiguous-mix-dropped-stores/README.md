@@ -1,5 +1,9 @@
 # Cray CCE-19: stores to a non-`CONTIGUOUS` dummy are dropped when the same call also passes a `CONTIGUOUS` one
 
+> **Severity:** **Silent wrong answers** (CCE 19.x)  
+> **Fix belongs to:** fixed in CCE 20.0.0 — no action needed  
+> **Status:** Historical. Worked around in MFC since MFlowCode/MFC#1679; retained because it is the precedent that this defect class does get fixed.
+
 > **Note on scope:** this entry documents a **CCE 19** defect, kept alongside the CCE 21
 > entries because it is the reason MFC could not simply stay on 19.0.0 while 21 was
 > unusable. It is **fixed in CCE 20.0.0** and absent in 18.x, so it is closed from a

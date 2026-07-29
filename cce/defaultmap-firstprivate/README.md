@@ -1,5 +1,9 @@
 # Cray CCE-19: `defaultmap(firstprivate:scalar)` does not actually firstprivate the scalars
 
+> **Severity:** Abort  
+> **Fix belongs to:** CCE — filed as OLCFHELP-26859  
+> **Status:** CCE 19/20-era. Superseded in practice by the CCE 21 `defaultmap` defects, which share the theme of `defaultmap` overriding an explicit clause.
+
 Standalone reproducer for a Cray Fortran (CCE 19) OpenMP target-offload bug.
 
 ## Tracking

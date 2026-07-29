@@ -1,5 +1,9 @@
 # CCE 21: `!DIR$ INLINENEVER` on a device routine is accepted, then overridden with `alwaysinline`
 
+> **Severity:** **Silently ineffective directive** — no abort, no wrong answers on its own  
+> **Fix belongs to:** CCE Fortran front end  
+> **Status:** Root-caused: `!DIR$ INLINENEVER` is accepted and echoed, then the routine is emitted with `alwaysinline`. Documented behaviour (`man 7 inlinealways`) says placement in the definition should suppress inlining at every call site in the file.
+
 **Silently ineffective directive.** A procedure carrying both a device-routine directive
 (`!$acc routine seq`) and `!DIR$ INLINENEVER` is emitted into the device IR with the
 **`alwaysinline`** attribute — the opposite of what was requested. The link-time inliner

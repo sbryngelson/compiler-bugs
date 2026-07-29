@@ -1,5 +1,9 @@
 # CCE 21.0.2: MFC links but 21 tests fail at runtime on Frontier (MI250X)
 
+> **Severity:** n/a — attribution record, not a defect  
+> **Fix belongs to:** n/a — every failure is filed separately  
+> **Status:** **RESOLVED.** All 21 runtime failures attributed to filed defects; MFC now passes 627/627 on both offload backends under CCE 21.0.2.
+
 **Status: RESOLVED — all 21 failures attributed, no longer open.** Every failure below traced
 to a specific defect, each now filed separately with a reproducer. With those addressed, MFC
 passes **627/627 on both `--gpu mp` and `--gpu acc`** under CCE 21.0.2. This entry is kept as
