@@ -36,7 +36,7 @@ llc: llvm/include/llvm/CodeGen/SlotIndexes.h:96: llvm::IndexListEntry*
 The pass walks a live interval's value numbers and asks each one for its defining
 instruction. For an **unused (dead) valno** or a **PHI def**, `VNI->def` is not a real
 instruction slot — it is a reserved index — and `getInstructionFromIndex` trips the assert.
-The upstream fix is a three-line guard:
+Upstream carries a three-line guard against exactly this, absent from CCE's 21.1.8 base:
 
 ```cpp
  for (VNInfo *VNI : LI.vnis()) {
@@ -50,6 +50,10 @@ pressure. That is why every mitigation in the entry's attribute table works by *
 pressure: they do not fix the bug, they stop the split that creates the valno to trip over.
 It is also why the crash is sensitive to unrelated source changes — the frame and allocation
 shift, and the split moves.
+
+**Do not call that guard "the fix"** — see the backport section below. Stock 21.1.8 with
+assertions on compiles the real module clean, so the valno that trips the assert is produced
+by CCE-side allocation; the guard would make it harmless but the trigger is elsewhere.
 
 ### 2. InstCombine invalid cast
 
