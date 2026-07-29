@@ -1,5 +1,9 @@
 # Cray CCE 20.0.2: `lld` corrupts the heap in "Infer address spaces" during device LTO
 
+> **Severity:** Abort (heap corruption) — loud, no wrong answers  
+> **Fix belongs to:** superseded — CCE 21.x does not exhibit it  
+> **Status:** Historical. CCE 20.x is no longer a target; MFC now links and passes 627/627 on CCE 21.0.2. Retained for the record.
+
 **Status: confirmed on stock upstream MFC, no local patches. Reproduces standalone from the
 committed bitcode via `lld` alone — no MFC, no build system, no GPU (see Reproducing). Not
 yet filed with HPE (the linker asks for a report).**
@@ -166,3 +170,40 @@ interestingness test grepping for `malloc_consolidate` — the procedure used fo
 `../lld-agpr-mfma-assert`. Not done. Note it would have to drive `lld`, not `llc`, for the
 reasons above, which makes the interestingness test slower and the reduction less
 convenient.
+
+
+## Reproduction scope: needs the full LTO link, not an isolated pass
+
+`sim-cce20.bc` does **not** reproduce the corruption when the pass is run on its own — including
+under the very compiler that crashed:
+
+| toolchain | `opt -passes=infer-address-spaces sim-cce20.bc` |
+| --- | --- |
+| CCE 20.0.0 | clean |
+| **CCE 20.0.2** (the crashing version) | **clean** |
+| CCE 21.0.0 | clean |
+| ROCm LLVM 20 / 22 | clean |
+
+So the bitcode alone is not sufficient. Two reasons, both worth knowing before anyone spends
+time on it:
+
+1. The failure is **heap corruption**, not an assertion. Whether it manifests depends on the
+   allocator's state — which objects were allocated and freed before the pass ran. `opt` running
+   one pass on one module has an entirely different allocation history from `lld` performing a
+   full LTO link of the whole program.
+2. `lld`'s LTO pipeline runs the pass in a different context (parallel codegen, its own
+   allocator traffic) than `opt` does.
+
+Reproducing it therefore requires the original link, not a reduced pass invocation. That is also
+why it was never reduced further: heap corruption resists reduction, because shrinking the input
+changes the allocation pattern that triggers it.
+
+## Why this is now historical
+
+CCE 20.x was only ever a waypoint. The port went to **CCE 21.0.2**, which does not exhibit this
+defect — it has a different device-link failure
+([`../lld-agpr-mfma-assert`](../lld-agpr-mfma-assert), an assertion rather than heap corruption),
+and with that worked around MFC passes **627/627 on both offload backends**.
+
+Kept because it documents that *no* CCE between 19 and 21 could link MFC — 20.x for this reason,
+21.x for the AGPR assert — which is the context for why the port skipped 20.x entirely.
