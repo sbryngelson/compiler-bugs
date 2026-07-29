@@ -1,5 +1,9 @@
 # CCE 21 silently discards a dynamically-indexed store into a 1-based private array
 
+> **Severity:** **Silent wrong answers**  
+> **Fix belongs to:** CCE front end (upstream is already correct)  
+> **Status:** Root-caused: a negative byte offset is zero-extended instead of sign-extended, so `zext(-4)/4 = 0x3FFFFFFF` becomes the vector index and the store is discarded.
+
 **Wrong answers, no diagnostic, no crash.** A store to `arr(v)` — where `arr` is a
 local array with lower bound 1 and `v` is a runtime value — is dropped from the
 generated device code. The array keeps its previous contents and the program
@@ -25,7 +29,7 @@ to 1.5e-04 relative — in both cases with no error of any kind.
 
 ---
 
-## 1. Files
+## Files
 
 | file | what it is |
 | --- | --- |
@@ -36,7 +40,7 @@ to 1.5e-04 relative — in both cases with no error of any kind.
 | `v_write-cce19.disasm.txt` | Device disassembly of the correct CCE 19 code. |
 | `extract-device-image.py` | Pulls the embedded AMDGPU ELF out of the executable (see §5). |
 
-## 2. Reproduce
+## Reproduce
 
 ```bash
 module reset
@@ -85,7 +89,7 @@ The two controls isolate the trigger: `v_read` passes, so *loads* are fine, and
 `v_lb0` — the identical store into an array declared `idx(0:2)` instead of
 `idx(3)` — also passes. **The lower bound of 1 is the trigger.**
 
-## 3. The reproducer
+## The reproducer
 
 ```fortran
 integer :: idx(3)                     ! lower bound 1
@@ -98,7 +102,7 @@ do j = 1, n
 end do
 ```
 
-## 4. Mechanism
+## Mechanism
 
 For a 1-based array the byte offset of `arr(v)` is `4*v - 4`. CCE 21
 canonicalizes the element index as `v + 0x3FFFFFFF`, i.e. `(v-1) + 2^30`. In
@@ -141,7 +145,7 @@ v_add_u32_e32      v1, -4, v1          ; the 1-based adjustment, done in the add
 buffer_store_dword v2, v1, s[0:3], 0 offen
 ```
 
-## 5. Workaround
+## Workaround
 
 `-plugin-opt=-disable-promote-alloca-to-vector`, injected into the device link
 via the `CRAY_CCE_LLD_ARGS` environment variable. Measured over the whole MFC
@@ -220,7 +224,7 @@ Two things would settle it:
 Until then, treat the flag as *the belt-and-braces option that is measured to be
 near-free*, not as a demonstrated requirement on top of the source patch.
 
-## 6. Why this is worse than an ordinary miscompilation
+## Why this is worse than an ordinary miscompilation
 
 **The defect cannot be detected in the generated binary.** A dropped store
 leaves no instruction behind, so there is nothing to grep for. We initially

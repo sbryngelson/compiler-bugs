@@ -1,5 +1,9 @@
 # Cray CCE 21.x: `lld` asserts in "AMDGPU Rewrite AGPR-Copy-MFMA" during device LTO
 
+> **Severity:** Abort (blocks all linking)  
+> **Fix belongs to:** **Backport** — fix exists in LLVM 22  
+> **Status:** Highest-value fix: the workaround it forces (`-mattr=-mai-insts`) disables AGPRs and costs 29x scratch and 61% on MFC's IGR solver.
+
 **Status: confirmed on CCE 21.0.0 and 21.0.2. Root-caused — the pass gates on AGPRs being
 *allocated* rather than on MFMA being present, and gfx90a's unified register file makes
 high-pressure MFMA-free kernels allocate AGPRs. A portable source-level workaround exists

@@ -1,5 +1,9 @@
 # CCE Fortran front end builds a flat pointer from a private offset without the aperture
 
+> **Severity:** **Silent wrong answers / fault**  
+> **Fix belongs to:** CCE front end (LLVM is correct)  
+> **Status:** Root-caused: private->flat conversion via `ptrtoint`/`zext`/`inttoptr` drops the scratch aperture, making offset 0 indistinguishable from null.
+
 ## Summary
 
 The Cray Fortran front end lowers element access to a **local (private / addrspace(5))

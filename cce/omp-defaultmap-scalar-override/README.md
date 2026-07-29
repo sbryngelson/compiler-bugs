@@ -1,5 +1,9 @@
 # CCE 21 ignores an explicit `map(to:)` for a scalar when `defaultmap(firstprivate:scalar)` is also present
 
+> **Severity:** **Silent wrong answers**  
+> **Fix belongs to:** CCE Fortran OpenMP lowering  
+> **Status:** Same defect as `defaultmap-zeroes-resident-arrays` — identical device-IR signature. Triage together.
+
 **Wrong answers, no diagnostic.** A scalar that is *explicitly* data-mapped with
 `map(to: count)` is privatised anyway when the same `target` directive carries
 `defaultmap(firstprivate:scalar)`. An `!$omp atomic capture` on that scalar then
@@ -13,38 +17,6 @@ the same index to nearly every iteration.
 * **Version tested:** `Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)`
 
 
-## Same defect as `defaultmap-zeroes-resident-arrays` — shared mechanism
-
-Both are the **same underlying bug**: a `defaultmap` clause causes CCE's Fortran front end to
-copy an explicitly-mapped scalar **by value into thread-private memory**, so updates never
-reach the mapped location.
-
-Device IR signature, extracted with `../extract-device-ir.sh`:
-
-| arm | `$_pvt` allocas | atomic to `addrspace(5)` |
-| --- | --- | --- |
-| `atomcap_omp_bare` | 0 | 0 |
-| `atomcap_omp_defaultmap` | **3** | **1** |
-
-which matches `defaultmap-zeroes-resident-arrays` exactly:
-
-```llvm
-; correct -- the mapped global
-atomicrmw add ptr addrspace(1) %r51, i32 1 syncscope("agent") monotonic
-; with defaultmap -- addrspace(5) is per-thread private scratch
-%"$_pvt3_d1" = alloca i32, align 4, addrspace(5)
-atomicrmw add ptr addrspace(5) %"$_pvt3_d1", i32 1 syncscope("agent") monotonic
-```
-
-**Triage these two together — one fix should close both.** The companion entry is the stronger
-statement of the defect, because there the `defaultmap` categories are `aggregate`,
-`allocatable`, and `pointer` and it still privatizes a **scalar**; the category need not even
-match the variable it corrupts.
-
-Scope: **Fortran front end only.** The equivalent C program returns the correct answer; C uses
-the clang OpenMP lowering (`%d1.addr = alloca ptr`, by reference) rather than CCE's
-(`$_pvt` / `$ck_L`, by value).
-
 ## Tracking
 
 | Where | Link / ID |
@@ -53,7 +25,7 @@ the clang OpenMP lowering (`%d1.addr = alloca ptr`, by reference) rather than CC
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
 | Related | [`../defaultmap-zeroes-resident-arrays`](../defaultmap-zeroes-resident-arrays) — **very likely the same underlying defect**, seen on resident arrays rather than explicitly-mapped scalars. [`../defaultmap-firstprivate`](../defaultmap-firstprivate) — **a different defect**, same clause: there CCE 19 fails to firstprivate scalars covered by `defaultmap` and produces `NaN`; here CCE 21 firstprivates a scalar that was *explicitly* `map`-ed. Do not merge the two. |
 
-## 1. Why we believe this is non-conforming
+## Why we believe this is non-conforming
 
 OpenMP specifies `defaultmap` as the fallback for variables that are **not**
 otherwise explicitly data-mapped or privatised. An explicit `map` clause for a
@@ -62,7 +34,7 @@ given variable takes precedence. Here the same directive contains both
 should win, leaving `count` a single shared object in the device data
 environment.
 
-## 2. Files
+## Files
 
 | file | what it is |
 | --- | --- |
@@ -73,7 +45,7 @@ environment.
 
 The two OpenMP sources differ by exactly one clause (and the label string).
 
-## 3. Reproduce
+## Reproduce
 
 ```bash
 module reset
@@ -169,7 +141,39 @@ total is exactly right — which rules out "the atomic is racy" as an explanatio
 localises the defect to how `defaultmap` changes the *data environment* of an
 explicitly-mapped scalar. These two are controls, not failing cases.
 
-## 4. The kernel of it
+## Same defect as `defaultmap-zeroes-resident-arrays` — shared mechanism
+
+Both are the **same underlying bug**: a `defaultmap` clause causes CCE's Fortran front end to
+copy an explicitly-mapped scalar **by value into thread-private memory**, so updates never
+reach the mapped location.
+
+Device IR signature, extracted with `../extract-device-ir.sh`:
+
+| arm | `$_pvt` allocas | atomic to `addrspace(5)` |
+| --- | --- | --- |
+| `atomcap_omp_bare` | 0 | 0 |
+| `atomcap_omp_defaultmap` | **3** | **1** |
+
+which matches `defaultmap-zeroes-resident-arrays` exactly:
+
+```llvm
+; correct -- the mapped global
+atomicrmw add ptr addrspace(1) %r51, i32 1 syncscope("agent") monotonic
+; with defaultmap -- addrspace(5) is per-thread private scratch
+%"$_pvt3_d1" = alloca i32, align 4, addrspace(5)
+atomicrmw add ptr addrspace(5) %"$_pvt3_d1", i32 1 syncscope("agent") monotonic
+```
+
+**Triage these two together — one fix should close both.** The companion entry is the stronger
+statement of the defect, because there the `defaultmap` categories are `aggregate`,
+`allocatable`, and `pointer` and it still privatizes a **scalar**; the category need not even
+match the variable it corrupts.
+
+Scope: **Fortran front end only.** The equivalent C program returns the correct answer; C uses
+the clang OpenMP lowering (`%d1.addr = alloca ptr`, by reference) rather than CCE's
+(`$_pvt` / `$ck_L`, by value).
+
+## The kernel of it
 
 ```fortran
 count = 0
@@ -187,7 +191,7 @@ end do
 Every value lands in range, so this is not a wild index — each thread simply
 counts in its own private copy of `count`.
 
-## 5. How we hit it
+## How we hit it
 
 MFC (<https://github.com/MFlowCode/MFC>) uses exactly this pattern to allocate
 immersed-boundary ghost-point slots. Its macro layer emits
@@ -219,7 +223,7 @@ in MFC is that the ghost-point slot allocation is silently wrong — a real
 correctness bug we have to fix regardless — but it is not the crash that led us
 here, and we would rather say so than overstate the impact.
 
-## 6. Workaround
+## Workaround
 
 **Drop the `defaultmap(<category>:scalar)` clause.** That is the only working
 form we found — changing the explicit map's category does not help

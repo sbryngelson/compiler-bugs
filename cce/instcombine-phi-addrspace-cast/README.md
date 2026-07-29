@@ -1,5 +1,9 @@
 # CCE 21: InstCombine builds a bitcast between address spaces and asserts
 
+> **Severity:** Abort (blocks case-optimized builds)  
+> **Fix belongs to:** **Backport** `6d033abb7`  
+> **Status:** Fixed upstream by llvm/llvm-project#181064, merged 2026-02-15 — after CCE 21.0.2's 2025-12-12 cutoff. Three-line type guard.
+
 **Compiler abort.** `InstCombine`'s `foldIntegerTypedPHI` reaches a PHI whose incoming
 values trace back, through `ptrtoint`/`inttoptr`, to pointers in **two different address
 spaces**. It then emits a `bitcast` between them — which is not valid IR, a cast across
@@ -24,14 +28,14 @@ opt: llvm/lib/IR/Instructions.cpp:3040: static llvm::CastInst*
 | Vendor | Filed with OLCF/HPE 2026-07-29 — case ID pending |
 | Related | [`../private-flat-pointer`](../private-flat-pointer) — same mixed-address-space family |
 
-## 1. Files
+## Files
 
 | file | what it is |
 | --- | --- |
 | `phi-addrspace.ll` | The reproducer. 25 lines, one function. |
 | `run.sh` | Runs the crash, the partial workaround, and the version triage. |
 
-## 2. Reproduce
+## Reproduce
 
 ```bash
 /opt/cray/pe/cce/21.0.2/cce-clang/x86_64/bin/opt -passes=instcombine phi-addrspace.ll -o /dev/null
@@ -64,7 +68,7 @@ One pass, one function, no application and no build system involved.
 The empty critical-edge block is load-bearing. Branching to `%join` directly from
 `%entry` does **not** reproduce, which is worth knowing before simplifying further.
 
-## 3. Version triage
+## Version triage
 
 | LLVM | source | result |
 | --- | --- | --- |
@@ -125,7 +129,7 @@ supplies the mechanism for it.
 change needed — unlike `../promote-alloca-dropped-store`, where the equivalent history walk
 showed the upstream code was *already* correct and the divergence is CCE-side.
 
-## 4. Workaround — partial, and known to be incomplete
+## Workaround — partial, and known to be incomplete
 
 `-plugin-opt=-instcombine-max-num-phis=0` ("Maximum number phis to handle in
 intptr/ptrint folding") clears the crash on the real application kernel, but
@@ -141,7 +145,7 @@ disable the faulty fold. Recorded because the obvious reading of the flag name �
 "this turns the broken transform off" — is wrong, and acting on it would leave a
 latent abort with no diagnostic.
 
-## 5. How it was found
+## How it was found
 
 MFC (<https://github.com/MFlowCode/MFC>) hit this linking `simulation` under
 `--case-optimization` on Frontier. Only case-optimized builds reach it: baking the
@@ -160,7 +164,7 @@ One trap: key the `llvm-reduce` interestingness test on the assertion text, not 
 symbolized stack frame. `foldIntegerTypedPHI` does not always resolve in the dump, so
 a test that greps for it rejects the unreduced input as "not interesting".
 
-## 6. Where the PHI comes from — GVN PRE — and the O1/O2 boundary
+## Where the PHI comes from — GVN PRE — and the O1/O2 boundary
 
 Independent reduction from the same application, arriving at the same defect from the
 module level rather than the function level. Two facts that the minimal `.ll` cannot
@@ -223,7 +227,7 @@ accepts the directive and then emits the routine with `alwaysinline` anyway. See
 `cce/inlinenever-ignored-device` (MFC-side copy: `cce21-bugs/14-...`). That defect is
 what forces a flag-based workaround for this one.
 
-## 7. Root cause: CCE materialises the same device global in two address spaces
+## Root cause: CCE materialises the same device global in two address spaces
 
 The two address spaces do not come from the application. **CCE emits two different load
 forms for the same device global within a single function**, and GVN then legitimately

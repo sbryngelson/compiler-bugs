@@ -40,7 +40,7 @@ pre-existing MFC/Frontier problem — not at a backend-specific bug.
 
 ## Failure clusters
 
-### 1. IBM — 10 tests, hard crashes (most serious)
+### IBM — 10 tests, hard crashes (most serious)
 
 ```
 18B832DD  3D -> 2 Fluid(s) -> Viscous -> IBM -> Cuboid          segfault 139
@@ -57,7 +57,7 @@ AA49A8BC  3D -> Example -> mibm_sphere_head_on_collision
 
 These are `Segmentation fault (core dumped)`, exit 139 — not tolerance drift.
 
-### 2. QBMM — 3 tests, runtime diagnostic
+### QBMM — 3 tests, runtime diagnostic
 
 ```
 0501B3DA  1D -> Viscosity -> Bubbles -> QBMM -> bubble_model=3 -> cfl_adap_dt=T
@@ -88,7 +88,7 @@ which is why the diagnostic points there. If confirmed, the MFC-side fix is to l
 routines to module scope — a portability improvement independent of which compiler ships.
 **Unverified.**
 
-### 3. Tolerance — 5 tests, at least one near-zero
+### Tolerance — 5 tests, at least one near-zero
 
 ```
 0090B316  MPI Consistency -> 3D -> Viscous
@@ -110,7 +110,7 @@ A 49% *relative* error on values of order 1e-11, in a double-precision field of 
 roundoff. Floating-point reassociation differences between compilers reproduce this
 exactly. Treat as suspect-benign pending the control.
 
-### 4. Lagrange bubbles — 2 tests; chemistry — 1
+### Lagrange bubbles — 2 tests; chemistry — 1
 
 ```
 7854BA64  2D -> Lagrange Bubbles -> One-way Coupling -> Inertial Bubbles

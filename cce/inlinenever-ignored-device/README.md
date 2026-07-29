@@ -21,7 +21,7 @@ listing, and compiles cleanly.
 | Vendor | Filed with OLCF/HPE 2026-07-29 — case ID pending |
 | Blocks | [`../instcombine-phi-addrspace-cast`](../instcombine-phi-addrspace-cast) — the source-level workaround for that abort depends on this directive working |
 
-## 1. Files
+## Files
 
 | file | what it is |
 | --- | --- |
@@ -29,7 +29,7 @@ listing, and compiles cleanly.
 | `run.sh` | compiles it and inspects the device image |
 | `extract-device-image.py` | pulls the embedded AMDGPU ELF out of the host binary |
 
-## 2. Reproduce
+## Reproduce
 
 ```bash
 module load cpe/26.03 cce/21.0.2 rocm/7.2.0 craype-accel-amd-gfx90a
@@ -57,7 +57,7 @@ anywhere in the device image, and the leaf's arithmetic appears inline in the ke
 Either `noinline` in the device IR and an out-of-line device function, **or** a
 diagnostic stating that the directive cannot be honoured for device routines.
 
-## 3. The pattern
+## The pattern
 
 ```fortran
 subroutine s_leaf(a, b, c)
@@ -71,7 +71,7 @@ end subroutine
 
 called from an `!$acc parallel loop`. Nothing else is required.
 
-## 4. IR-level confirmation
+## IR-level confirmation
 
 From a production build (MFC), where the same directive is applied to
 `s_compute_viscous_stress_tensor`. The Fypp-generated Fortran contains the directive:
@@ -93,7 +93,7 @@ attributes #23 = { ... alwaysinline ... }
 The caller's IR then contains blocks attributed to the callee's source file — i.e. it
 was inlined.
 
-## 4b. The documented behaviour, verbatim
+## The documented behaviour, verbatim
 
 From `man 7 inlinealways` shipped with CPE (`/opt/cray/pe/cce/*/man/man7/inlinealways.7`,
 which `inlinenever.7` sources):
@@ -120,7 +120,7 @@ This rules out the two obvious deflections — wrong spelling and wrong placemen
 placement (directive in the caller rather than the definition) is also documented and was tested
 separately with the same null result.
 
-## 5. Why this matters
+## Why this matters
 
 If device routines must be `alwaysinline` as an implementation constraint of
 `routine seq`, that is defensible — but then the directive should be **rejected with a
@@ -160,7 +160,7 @@ In the same application this also silently disabled **51** existing `cray_noinli
 call sites, two of which were added specifically to work around earlier compiler
 problems and were therefore not doing what their authors believed.
 
-## 6. Not verified
+## Not verified
 
 The reproducer uses OpenACC (`!$acc routine seq`). Whether the OpenMP spelling
 (`!$omp declare target`) shows the same behaviour has **not** been tested here.

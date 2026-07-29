@@ -1,5 +1,9 @@
 # CCE 21: `defaultmap` overrides an explicit `private` clause
 
+> **Severity:** Abort  
+> **Fix belongs to:** CCE host-side runtime  
+> **Status:** Distinct from the other two `defaultmap` entries: device IR is identical across arms, so this is a host-side present-table lookup for an explicitly-`private()` variable.
+
 **Abort.** A local array that is explicitly listed in a `private(...)` clause on a
 `target` construct is looked up in the **present table** anyway when the same
 directive carries `defaultmap(present:aggregate)`, and the program dies:
@@ -18,32 +22,6 @@ A private variable has no business in the present table at all.
 * **Version tested:** `Cray Fortran : Version 21.0.2 (20260604162910_c3fb8a56d0f4e468a9d0387a93105d6911ac9420)`
 
 
-## Distinct from the other two `defaultmap` entries — this one is host-side
-
-It is tempting to fold this together with `defaultmap-zeroes-resident-arrays` and
-`omp-defaultmap-scalar-override`, which are one defect (a `defaultmap` clause privatizing an
-explicitly-mapped scalar). **This is a different mechanism**, and the device IR proves it.
-
-Extracted with `../extract-device-ir.sh`, all three arms are identical — same length, no
-privatization, no address-space change:
-
-| arm | lines | `$_pvt` allocas | `addrspace(5)` atomics |
-| --- | --- | --- | --- |
-| `priv_bare` | 92 | 0 | 0 |
-| `priv_defaultmap_present` | 92 | 0 | 0 |
-| `priv_defaultmap_tofrom` | 92 | 0 | 0 |
-
-The generated device code is the same with and without the clause, so nothing in codegen
-explains the abort. The failure is on the **host side**: a present-table lookup is issued for a
-variable that appears in an explicit `private()` clause, and `find_in_present_table` fails
-because a private variable was never mapped.
-
-Note the direction is the *opposite* of the other two: there, `defaultmap` privatizes something
-that should be mapped; here it maps (looks up) something that should be private. Both are
-`defaultmap` overriding an explicit clause, which is likely a common root in clause-precedence
-handling — but they are not the same code path and should not be merged on the assumption that
-one fix covers both.
-
 ## Tracking
 
 | Where | Link / ID |
@@ -52,7 +30,7 @@ one fix covers both.
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
 | Related | [`../05-omp-atomic-capture-scalar`](../05-omp-atomic-capture-scalar), [`../11-defaultmap-zeroes-resident-arrays`](../11-defaultmap-zeroes-resident-arrays) — very likely the same defect |
 
-## 1. Files
+## Files
 
 | file | what it is |
 | --- | --- |
@@ -63,7 +41,7 @@ one fix covers both.
 Twenty lines each. The array is `real(wp) :: length(3)`, written and read only
 inside the loop body, and named in the `private` clause.
 
-## 2. Reproduce
+## Reproduce
 
 ```bash
 module reset
@@ -101,7 +79,33 @@ private-array  wrong=0 of 256   PASS
 The only difference between the passing and aborting programs is the presence of
 `defaultmap(present:aggregate)` on the directive.
 
-## 3. Why this is non-conforming
+## Distinct from the other two `defaultmap` entries — this one is host-side
+
+It is tempting to fold this together with `defaultmap-zeroes-resident-arrays` and
+`omp-defaultmap-scalar-override`, which are one defect (a `defaultmap` clause privatizing an
+explicitly-mapped scalar). **This is a different mechanism**, and the device IR proves it.
+
+Extracted with `../extract-device-ir.sh`, all three arms are identical — same length, no
+privatization, no address-space change:
+
+| arm | lines | `$_pvt` allocas | `addrspace(5)` atomics |
+| --- | --- | --- | --- |
+| `priv_bare` | 92 | 0 | 0 |
+| `priv_defaultmap_present` | 92 | 0 | 0 |
+| `priv_defaultmap_tofrom` | 92 | 0 | 0 |
+
+The generated device code is the same with and without the clause, so nothing in codegen
+explains the abort. The failure is on the **host side**: a present-table lookup is issued for a
+variable that appears in an explicit `private()` clause, and `find_in_present_table` fails
+because a private variable was never mapped.
+
+Note the direction is the *opposite* of the other two: there, `defaultmap` privatizes something
+that should be mapped; here it maps (looks up) something that should be private. Both are
+`defaultmap` overriding an explicit clause, which is likely a common root in clause-precedence
+handling — but they are not the same code path and should not be merged on the assumption that
+one fix covers both.
+
+## Why this is non-conforming
 
 OpenMP specifies `defaultmap` as the fallback for variables that are **not**
 otherwise explicitly data-mapped or privatised. `length` is explicitly privatised
@@ -113,7 +117,7 @@ Note the category dependence: `tofrom:aggregate` is silently tolerated while
 `length` in both cases and only the `present` category having a failure mode that
 announces itself.
 
-## 4. This is one defect with three faces
+## This is one defect with three faces
 
 | entry | `defaultmap` overrides | symptom |
 | --- | --- | --- |
@@ -126,7 +130,7 @@ clause is present. If that is one bug, one fix addresses all three — and 05 an
 11 are the dangerous pair, because they produce wrong answers rather than
 stopping.
 
-## 5. How it was found, and a correction worth recording
+## How it was found, and a correction worth recording
 
 This surfaced while trying `defaultmap(present:aggregate)` as a candidate fix for
 defect 11 in MFC. The abort named `length(:)` at `m_ib_patches.fpp:145`, and it
@@ -143,7 +147,7 @@ reading the declaration. Recorded because the same shape of error — treating t
 compiler's behaviour as evidence about the program — cost several rounds
 elsewhere in this investigation.
 
-## 6. Workaround
+## Workaround
 
 Emit no `defaultmap` clause. That is what MFC does now
 (`a5565114`), which also fixes defects 05 and 11.
