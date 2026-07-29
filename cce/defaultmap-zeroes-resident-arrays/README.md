@@ -244,3 +244,18 @@ attributed to this defect.
 Emit no `defaultmap` clause. In OpenMP 5.0 the defaults it was restating are
 already the defaults, so for this application removing it was semantically free
 as well as necessary.
+
+## Verdict
+
+`build_and_run.sh <cce-version>` runs all seven binaries and scores the exact `host/device`
+pair against the table above, exiting 0 when the defect is present as documented (see
+`../README.md` for the convention). `NO_RUN=1` stops after the build.
+
+Each binary prints three rows — pointer-component, allocatable-component and bare module
+array — and all three are scored, not just the first: a change affecting only one component
+kind would otherwise slip through.
+
+Scoring is on the device **value**, not PASS/FAIL. Every failing row must read exactly
+`device=0`. A device value that were merely wrong rather than zero would be a different
+defect than "the resident array reads as all zeros inside the target region", and should not
+be recorded here.

@@ -35,26 +35,54 @@ echo "== verifying each binary really contains GPU code"
 for f in $PROGS; do guard_device_image "$out/$f/$f"; done
 
 echo
-cat <<EOF
-== now run them on a GPU node
+# ---------------------------------------------------------------------------
+# Run and score. Login node has a GPU; NO_RUN=1 stops after the build.
+#
+# Scored on the device value, not PASS/FAIL: every failing row must read
+# device=0 specifically. A nonzero-but-wrong device value would be a different
+# defect than "the resident array reads as all zeros inside the target region".
+# ---------------------------------------------------------------------------
+export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${CRAY_LD_LIBRARY_PATH}:${LD_LIBRARY_PATH}"
 
-    export LD_LIBRARY_PATH="\${ROCM_PATH}/lib:\${CRAY_LD_LIBRARY_PATH}:\${LD_LIBRARY_PATH}"
-    for f in $(echo $PROGS); do
-        echo "##### \$f"; srun -n1 --gpus-per-task 1 ./$out/\$f/\$f
-    done
+if [ "${NO_RUN:-0}" = 1 ]; then
+    echo "== NO_RUN set; run these yourself (on a GPU node: srun -n1 --gpus-per-task 1 ./b)"
+    for b in "$out"/*; do [ -x "$b" ] && echo "    ./$b"; done
+    exit 0
+fi
 
-Expected on CCE 21.0.2 (measured; see README and results/run-verified.txt):
+# binary : expected-host : expected-device : role
+EXPECT="resident_bare:982:982:baseline-no-clause
+resident_defaultmap:982:0:THE-DEFECT
+resident_agg_only:982:0:defect-clause-alone-suffices
+resident_alloc_only:982:0:defect-clause-alone-suffices
+resident_ptr_only:982:0:defect-clause-alone-suffices
+control_negative_bounds:170:170:control-not-the-trigger
+control_named_exit:3684:3684:control-not-the-trigger"
 
-    resident_bare             host=982 device=982   PASS  <- baseline, no clause
-    resident_defaultmap       host=982 device=0     FAIL  <- THE DEFECT
-    resident_agg_only             host=982 device=0     FAIL  <- each clause alone
-    resident_alloc_only           host=982 device=0     FAIL     is sufficient
-    resident_ptr_only             host=982 device=0     FAIL
-    control_negative_bounds   host=170 device=170   PASS  <- not the trigger
-    control_named_exit        host=3684 device=3684 PASS  <- not the trigger
+echo
+echo "== running (login node has a GPU; no srun needed)"
+# Each binary prints three rows (pointer-component, allocatable-component, bare
+# module array). All three must show the same host/device pair, so the whole set
+# is scored -- checking only the first row would miss a clause-specific change.
+for e in $EXPECT; do
+    b=${e%%:*}; r=${e#*:}; wh=${r%%:*}; r=${r#*:}; wd=${r%%:*}; role=${r#*:}
+    bin="$out/$b/$b"
+    [ -x "$bin" ] || { guard_verdict "$wh/$wd" "not-built" "$b"; continue; }
+    got=$(./"$bin" 2>&1 | sed -n 's/.*host=\([0-9-]\+\)[[:space:]]*device=\([0-9-]\+\).*/\1\/\2/p' \
+          | sort -u | paste -sd, -)
+    guard_verdict "$wh/$wd" "${got:-no-output}" "$(printf '%-26s %s' "$b" "$role")"
+done
 
-All three FAIL rows read device=0: the resident array reads as all zeros inside
-the target region.  NOTE the polarity -- device=0 is the bug REPRODUCING.  The
-bare row and both controls must PASS; if they do not, suspect the toolchain
-before believing anything about the failing rows.
-EOF
+echo
+if [ "$GUARD_RC" -eq 0 ]; then
+    echo "RESULT: BUG PRESENT (as documented) -- a device-resident array reads as all"
+    echo "        zeros inside the target region. Each of the three clauses triggers it"
+    echo "        on its own, while the bare baseline and both controls are correct."
+else
+    echo "RESULT: *** deviation from the documented behaviour ***"
+    echo "        NOTE the polarity: device=0 on the defect rows is the bug REPRODUCING."
+    echo "        If resident_bare or a control moved, suspect the toolchain before"
+    echo "        believing anything about the failing rows."
+fi
+exit "$GUARD_RC"
+
