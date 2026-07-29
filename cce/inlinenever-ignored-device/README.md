@@ -1,6 +1,6 @@
 # CCE 21: `!DIR$ INLINENEVER` on a device routine is accepted, then overridden with `alwaysinline`
 
-> **Severity:** **Silently ineffective directive** — no abort, no wrong answers on its own  
+> **Severity:** **Silently ineffective directive on device only** — works correctly on CPU builds  
 > **Fix belongs to:** CCE Fortran front end  
 > **Status:** Root-caused: `!DIR$ INLINENEVER` is accepted and echoed, then the routine is emitted with `alwaysinline`. Documented behaviour (`man 7 inlinealways`) says placement in the definition should suppress inlining at every call site in the file.
 
@@ -168,3 +168,35 @@ problems and were therefore not doing what their authors believed.
 
 The reproducer uses OpenACC (`!$acc routine seq`). Whether the OpenMP spelling
 (`!$omp declare target`) shows the same behaviour has **not** been tested here.
+
+
+## Scope correction: it works on CPU builds — the defect is device-only
+
+An earlier reading of this entry could suggest `!DIR$ INLINENEVER` is simply broken. It is not.
+On a **CPU** Cray build the directive behaves exactly as documented.
+
+`host-cpu-control.f90` is the same leaf/driver pair with no offload directives at all:
+
+```console
+$ ftn -O2 -c host.f90        # with !DIR$ INLINENEVER
+$ objdump -d host.o | grep call
+   7e:  e8 ...  call  83 <s_driver$m_+0x63>      <-- real call, leaf NOT inlined
+
+$ ftn -O2 -c host_nodir.f90  # same source, directive deleted
+   (no call from s_driver -- the leaf is inlined away)
+```
+
+| build | call to the leaf emitted? |
+| --- | --- |
+| CPU, with `INLINENEVER` | **yes** — honoured |
+| CPU, without | no — inlined, as expected |
+| **GPU, device routine, with `INLINENEVER`** | **no — ignored, `alwaysinline` emitted** |
+
+So the defect is specifically: **the directive is honoured for host code and silently discarded
+for device routines.** That is a narrower and more precise claim than "the directive does not
+work", and it is the one to put to the vendor — a directive that works in one compilation mode
+and is silently dropped in another is harder to defend than an unimplemented feature.
+
+It also means that in an application which compiles the same sources for both CPU and GPU, these
+directives are **not dead code** — they are load-bearing on the CPU path and inert on the device
+path. Removing them because they appear ineffective on GPU would silently change host codegen.
