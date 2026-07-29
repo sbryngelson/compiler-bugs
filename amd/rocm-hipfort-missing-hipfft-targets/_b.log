@@ -1,0 +1,20 @@
+-- The C compiler identification is CrayClang 18.0.1
+-- Cray Programming Environment 2.7.33 C
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /opt/cray/pe/craype/2.7.33/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+CMake Error at /opt/rocm-7.2.0/lib/cmake/hipfort/hipfort-config.cmake:49 (include):
+  include could not find requested file:
+
+    /opt/rocm-7.2.0/lib/cmake/hipfort/hipfort-hipfft-targets.cmake
+Call Stack (most recent call first):
+  CMakeLists.txt:11 (find_package)
+
+
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- FOUND hipfort with component 'hipfft'
+-- Configuring incomplete, errors occurred!

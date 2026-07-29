@@ -1,8 +1,14 @@
-# ROCm 7.2.0: hipfort advertises a `hipfft` component but does not ship its targets file
+# ROCm 7.2.0: hipfort ships hipfft Fortran bindings but omits its CMake targets export
 
-**Packaging defect.** `hipfort-config.cmake` lists `hipfft` among its supported components and
-then unconditionally `include()`s `hipfort-hipfft-targets.cmake`, which is not installed. Any
-`find_package(hipfort ... hipfft ...)` therefore fails hard at configure time.
+**Packaging inconsistency.** hipfort installs `hipfort_hipfft.mod` and lists `hipfft` among its
+supported components, but does not install `hipfort-hipfft-targets.cmake` — which
+`hipfort-config.cmake` then `include()`s unconditionally. Any
+`find_package(hipfort ... hipfft ...)` fails hard at configure time.
+
+**This is not a relocation.** hipfft itself is fully present in ROCm 7.2.0 — its own CMake
+package at `lib/cmake/hipfft/`, `lib/libhipfft.so`, `include/hipfft/hipfft.h`, and the hipfort
+Fortran module `include/hipfort/amdgcn/hipfort_hipfft.mod`. Only hipfort's own target export for
+that component is absent, and hipfft is the **only** component for which the two disagree.
 
 * **Reported by:** OLCF Frontier, project CFD154
 * **Component:** ROCm 7.2.0, `hipfort` CMake package
@@ -50,23 +56,31 @@ targets file is a hard error rather than a graceful "component not found".
 
 ## 3. What is actually installed
 
-`hipfft` is the **only** advertised component whose targets file is absent:
+Every component ships **both** a Fortran module and a targets export — except `hipfft`, which
+ships the module only:
 
-| component | `hipfort-<comp>-targets.cmake` |
-| --- | --- |
-| rocblas, rocfft, rocrand, rocsolver, rocsparse | present |
-| hipblas, hiprand, hipsolver, hipsparse | present |
-| **hipfft** | **MISSING** |
+| component | `hipfort_<c>.mod` | `hipfort-<c>-targets.cmake` |
+| --- | --- | --- |
+| hipblas, hiprand, hipsolver, hipsparse, rocblas, rocfft | yes | yes |
+| **hipfft** | **yes** | **no** |
+
+So the Fortran bindings are installed and presumably usable; only the CMake plumbing to consume
+them via hipfort's component mechanism is missing.
 
 ## 4. Reproduce
 
-```bash
-ls /opt/rocm-7.2.0/lib/cmake/hipfort/hipfort-hipfft-targets.cmake   # No such file
-cat > t.cmake <<'X'
-find_package(hipfort REQUIRED COMPONENTS hipfft)
-X
-cmake -P t.cmake   # include could not find requested file
+```console
+$ bash run.sh
+=== 3. FAIL arm: find_package(hipfort COMPONENTS hipfft) ===
+  include could not find requested file:
+    /opt/rocm-7.2.0/lib/cmake/hipfort/hipfort-hipfft-targets.cmake
+  rc=1  (non-zero = reproduced)
+=== 4. CONTROL arm: same call with an installed component ===
+  rc=0  (0 = control passes, so the package and this CMakeLists are fine)
 ```
+
+`CMakeLists.txt` takes `-DCOMP=<component>`; the control arm differs only in that value, so a
+passing control rules out the reproducer itself being at fault.
 
 ## 5. Expected
 
