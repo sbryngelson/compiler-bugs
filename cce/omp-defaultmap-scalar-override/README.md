@@ -238,3 +238,37 @@ region.
 This is what we did in MFC — removed the clause from the CCE branch of the
 OpenMP loop-directive emitter, leaving the other compilers' branches alone. The
 AMD branch already omitted it.
+
+## Root cause: the mapped counter is privatised
+
+The `duplicates=4095 of 4096` signature means every thread computed the **same** captured
+value. The device IR says exactly why — compare the atomic in the correct arm against the
+defective one:
+
+```llvm
+; atomcap_omp_maponly  (correct, duplicates=0)
+%0 = atomicrmw add ptr addrspace(1) %r14, i32 1 syncscope("agent") monotonic
+
+; atomcap_omp_defaultmap  (the defect, duplicates=4095)
+%0 = atomicrmw add ptr addrspace(5) %"$_pvt3_count_t19", i32 1 syncscope("agent") monotonic
+```
+
+`addrspace(1)` is global; `addrspace(5)` is **thread-private scratch**. With `defaultmap` in
+play, CCE gives the shared counter a private per-thread copy, so each thread atomically
+increments *its own* copy — starting from the same firstprivatised value — and every thread
+arrives at the same answer. Hence one unique value and 4095 duplicates.
+
+Note how self-evidently wrong the emitted code is: an `atomicrmw` with `syncscope("agent")`
+on thread-private memory. Nothing else can ever contend for that address, so the atomic and
+its syncscope are dead weight — a strong tell that privatisation was applied after the atomic
+was formed, rather than the construct being lowered as a whole.
+
+This is what the entry's name means, now with IR evidence: `defaultmap` **overrides the
+explicit `map(to:)`** the program placed on that scalar. The `maponly` arm, identical except
+for dropping `defaultmap`, keeps the counter in `addrspace(1)` and is correct.
+
+LDS is **not** involved here (0 LDS globals in the defective arm; the *conforming* `bare` arm
+is the one with an LDS global). That distinguishes this from
+[`../defaultmap-firstprivate`](../defaultmap-firstprivate), where scalars that should be
+private are instead promoted to workgroup-shared LDS. Opposite directions — two defects, not
+one.

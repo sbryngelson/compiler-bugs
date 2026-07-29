@@ -158,3 +158,65 @@ failure mode this repo exists to catch.
 Exit codes follow the repo-wide convention: **0 means reality matched this document**
 (the defect is still present), nonzero means something changed and needs a human.
 See `../README.md`.
+
+## Root cause: the scalars are promoted to workgroup-shared LDS
+
+Established by comparing the emitted **device IR** of the `defaultmap` and explicit
+`firstprivate` builds. Two steps, in order:
+
+**1. It is not a data-mapping bug.** With `CRAY_ACC_DEBUG=2`, the two builds produce
+**byte-identical** runtime mapping traces (34 lines each, diff empty after address
+normalisation) — yet one returns the correct checksum and the other NaN. Whatever the host
+runtime does, it does the same thing in both cases. The defect is in generated device code.
+
+**2. The scalars land in `addrspace(3)` — LDS, shared per workgroup.**
+
+| build | LDS globals (`^@... addrspace(3)`) |
+| --- | --- |
+| explicit `firstprivate(...)` | **0** |
+| `defaultmap(firstprivate:scalar)` | **47** |
+
+The 47 objects are named after the very scalars the clause is supposed to firstprivatise:
+
+```llvm
+@"$$_rho_l_t115_AMD_LDS_46"    = internal addrspace(3) externally_initialized global double poison, align 32
+@"$$_pres_r_t112_AMD_LDS_43"   = internal addrspace(3) externally_initialized global double poison, align 32
+@"$$_xi_m_t76_AMD_LDS_10"      = internal addrspace(3) externally_initialized global double poison, align 32
+@"$$_vel_k_star_t67_AMD_LDS_1" = internal addrspace(3) externally_initialized global double poison, align 32
+...
+```
+
+and every thread stores its own computed value to the same address:
+
+```llvm
+store double %r28, ptr addrspace(3) @"$$_rho_l_t115_AMD_LDS_46", align 8
+store double %r39, ptr addrspace(3) @"$$_rho_r_t114_AMD_LDS_45", align 8
+```
+
+So instead of one copy **per thread**, there is one copy **per workgroup**, and the whole
+workgroup races on it. Last writer wins; downstream arithmetic sees another thread's
+intermediate values, and the checksum degrades to NaN. There are only **5** barriers in the
+module against 47 shared scalars — not remotely enough synchronisation even if sharing had
+been intended, which confirms this is not a deliberate optimisation with a missing fence.
+
+This also explains the `-O1` behaviour noted above: at `-O1` the races are less densely
+interleaved, so the answer comes out finite but ~0.6% wrong rather than NaN. Same defect,
+quieter symptom — which is the dangerous case.
+
+**The vendor-facing statement:** CCE applies its LDS-promotion path to scalars covered by
+`defaultmap(firstprivate:scalar)`, giving them workgroup extent where the clause requires
+per-thread extent. The explicit `firstprivate(...)` spelling of the same scalars produces no
+LDS at all and is correct, so the promotion decision is specific to the `defaultmap` path.
+
+### Not the same bug as `omp-defaultmap-scalar-override`
+
+Tempting to unify the two `defaultmap` defects; the IR says no. That one privatises a scalar
+that should be shared — the **opposite** direction. Measured, not assumed:
+
+| entry | CCE | what `defaultmap` does | result |
+| --- | --- | --- | --- |
+| this one | 19.0.0 | private scalar → **workgroup-shared LDS** | race → NaN |
+| [`../omp-defaultmap-scalar-override`](../omp-defaultmap-scalar-override) | 21.0.2 | mapped scalar → **thread-private** | no contention → duplicates |
+
+Both are `defaultmap` assigning the wrong data-sharing attribute, in opposite directions.
+Report them as two defects.

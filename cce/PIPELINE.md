@@ -190,3 +190,25 @@ inlining the one routine that creates the bad PHI — is unavailable by construc
   reading the actual IR settled each of them in minutes.
 * **When comparing compilers, verify the pass actually ran.** `-debug-pass=Structure`: a silently
   dropped pass and a fixed bug look identical from the outside.
+
+## Offload section names differ by CCE version and offload model
+
+The extraction recipe in each entry's `extract-device-ir.sh` uses `.cray.llvm.offloading`.
+That is correct for CCE 21.x, but **not universal** — dumping a section that does not exist
+fails silently and yields an empty result that is easy to mistake for "no device code":
+
+| toolchain / model | ELF section holding the device module |
+| --- | --- |
+| CCE 21.0.2, OpenMP and OpenACC | `.cray.llvm.offloading` (plus `cray_omp_offloading_entries`) |
+| CCE 19.0.0, OpenMP offload | `__CLANG_OFFLOAD_BUNDLE__openmp-cray-amdgcn-amd-amdhsa` |
+
+Check first rather than assuming:
+
+```bash
+llvm-readelf --section-headers foo.o | grep -iE 'offload|cray'
+```
+
+In both cases the payload contains raw LLVM bitcode — find the `BC\xc0\xde` magic and slice
+from there. For the CCE 21 `.cray.llvm.offloading` section the bitcode sits at a variable
+offset behind an `OffloadBinary` header (magic `0x10FF10AD`); searching for the bitcode magic
+handles both layouts without parsing the header.
