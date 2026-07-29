@@ -408,6 +408,12 @@ environment and is not part of the build system's configuration hash, so the rel
 (md5-verified unchanged). The end-to-end 61% figure is therefore correlational; the standalone
 table above is the controlled evidence for the mechanism.
 
+**Independent of ROCm version.** The `igr` regression is identical on ROCm 7.0.2 and 7.2.0
+(grind 3.27 vs 3.25, within the < 1% run-to-run variance), and the surrounding cases match to
+within 0.7%. Since ROCm supplies the runtime and device libraries but CCE's own bundled `lld`
+performs the offload link, no ROCm choice recovers the spilling. Recorded because "try a
+different ROCm" is the obvious first suggestion and it does not help.
+
 **Why this raises the priority of fixing the assert itself.** `-mai-insts` is currently the only
 practical way to link on CCE 21.x, and it is a global flag. A fix that lets AGPRs remain enabled
 would recover the spilling; narrowing the workaround (per-TU, or only for the kernels that
