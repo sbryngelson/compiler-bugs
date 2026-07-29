@@ -431,3 +431,36 @@ Two further cautions, both of which produced wrong counts here:
 * A discarded store leaves **no instruction behind**. Absence of the marker at a call
   site is therefore not evidence the site is safe — it is equally consistent with the
   store having already been eliminated. Screening must happen at source level.
+
+## Verdict
+
+`build_and_run.sh <cce-version>` builds, runs and scores all three arms, exiting 0 when the
+result matches this document (see `../README.md`). `NO_RUN=1` stops after the build.
+
+The expectation is version-dependent, which makes this the strongest-controlled entry here:
+
+| build | v_write | v_read | v_lb0 | meaning |
+| --- | --- | --- | --- | --- |
+| `./build_and_run.sh 21.0.2` | **FAIL** | PASS | PASS | the defect: the dynamically-indexed store is discarded |
+| `./build_and_run.sh 19.0.0` | PASS | PASS | PASS | pre-regression baseline — a real negative control, not a fix |
+
+Both were re-measured on Frontier and both exit 0. Running the pair proves the harness can
+produce either verdict; a reproducer that has only ever printed one has not been shown to
+distinguish them.
+
+### The environment will lie to you here
+
+`CRAY_CCE_LLD_ARGS` must **not** contain `-disable-promote-alloca-to-vector`. That option is
+the workaround for this exact defect, and with it set `v_write` prints a clean
+`nbad=0 of 64 PASS` on CCE 21.0.2 — identical to a vendor fix.
+
+This is easy to hit by accident. MFC's own Frontier module file exports it, so the obvious
+way to get a working CCE environment —
+
+```
+source <MFC>/mfc.sh load -c f -m g      # exports the workaround
+```
+
+— silently disables the bug. `guard_lld_clean` now refuses to run in that case rather than
+reporting a false pass; `unset CRAY_CCE_LLD_ARGS` first. It was hit during the writing of
+this harness, which is why the guard exists.

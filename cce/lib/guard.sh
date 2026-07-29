@@ -126,3 +126,27 @@ guard_verdict() {
         GUARD_RC=1
     fi
 }
+
+# guard_lld_clean <substring>... -- refuse to run if CRAY_CCE_LLD_ARGS contains any
+# of these, because they are the very workarounds that suppress these defects.
+#
+# This is not hypothetical. MFC's own Frontier module file exports
+#   CRAY_CCE_LLD_ARGS="-plugin-opt=-mattr=-mai-insts \
+#                      -plugin-opt=-disable-promote-alloca-to-vector \
+#                      -plugin-opt=-enable-load-in-loop-pre=false"
+# so `source mfc.sh load -c f -m g` -- the most convenient way to get a working CCE
+# environment on Frontier, and what most of these READMEs suggest -- silently turns
+# off the defect you are trying to observe. promote-alloca-dropped-store prints a
+# clean PASS under it, which reads exactly like a vendor fix.
+guard_lld_clean() {
+    local pat
+    for pat in "$@"; do
+        case "${CRAY_CCE_LLD_ARGS:-}" in
+            *"$pat"*) guard_fatal \
+                "CRAY_CCE_LLD_ARGS contains '$pat', which suppresses this defect."$'\n'\
+"      Full value: ${CRAY_CCE_LLD_ARGS}"$'\n'\
+"      Run 'unset CRAY_CCE_LLD_ARGS' first. Leaving it set makes this"$'\n'\
+"      reproducer report a clean PASS -- indistinguishable from a fix." ;;
+        esac
+    done
+}

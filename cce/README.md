@@ -295,3 +295,22 @@ something they did not, because every arm was failing for an environmental reaso
 comparison was vacuous. `contiguous-mix-dropped-stores` also ships a *negative* control: run
 it with the `v1_*` sources and it must report FIXED. A harness that cannot produce both
 verdicts has not been shown to distinguish them.
+
+### One more way the environment lies: `CRAY_CCE_LLD_ARGS`
+
+Several of these defects have an LLD-level workaround, and MFC's Frontier module file
+exports all of them at once:
+
+```
+CRAY_CCE_LLD_ARGS="-plugin-opt=-mattr=-mai-insts
+                   -plugin-opt=-disable-promote-alloca-to-vector
+                   -plugin-opt=-enable-load-in-loop-pre=false"
+```
+
+So `source <MFC>/mfc.sh load -c f -m g` — the convenient way to get a working CCE
+environment, and what several READMEs here suggest — turns off the very defects you are
+trying to observe. `promote-alloca-dropped-store` reports a clean PASS under it.
+
+`guard_lld_clean <substring>...` in `lib/guard.sh` makes an affected reproducer refuse to
+run rather than report a false fix. Add a call to it whenever a new entry's defect can be
+suppressed by one of these gates.
