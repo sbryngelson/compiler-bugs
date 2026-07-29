@@ -225,3 +225,31 @@ module-scope variables and/or nested allocatable derived types. Bug reports:
 
 `archive/` — cases that were fixed in CCE or kept for reference (allocatable derived
 types, scalar control cases).
+
+
+## Status of the 12 `!$acc declare` cases (`test-bug1`..`test-bug12`)
+
+These date from **CCE 15.0.1** and were reported as `OLCFDEV-1416` / `CAST-31898`. They predate
+the CCE 19->21 port work and are kept for the record.
+
+**Re-run on CCE 21.0.2 (2026-07-29): inconclusive, and the reason is a defect in the
+reproducers themselves.**
+
+| outcome | count | detail |
+| --- | --- | --- |
+| build + run | 11 | produce output |
+| build failure | 1 | `test-bug7` — multi-TU; module compile order, not necessarily a compiler fault |
+| **produce no output at all** | 4 | `test-bug6`, `9`, `11`, `12` |
+
+**None of the twelve self-check.** They print values and rely on a human comparing them against
+expectation; no expected output is recorded anywhere in the directory. So a re-run establishes
+only that they still compile and execute — it cannot say whether the original defects are fixed.
+The four silent ones are suspicious but uninterpretable without a reference result.
+
+To make these useful again someone would need to add a pass/fail criterion to each — the
+expected values, or a self-checking harness like the newer entries use (`nbad=0 ... PASS`). Until
+then their status on any compiler after 15.0.1 is genuinely unknown, and this section should not
+be read as "still broken" or "now fixed".
+
+That is worth stating plainly: an unscoreable reproducer is close to no reproducer. The newer
+entries in this directory were all written to self-verify for exactly this reason.

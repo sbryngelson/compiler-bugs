@@ -153,3 +153,14 @@ allocatables, so the attribute is accurate rather than a lie told to dodge the o
 
 Verified on Frontier, CCE 19.0.0, both offload backends — all eight multi-rank regression tests
 pass under `--gpu mp` and `--gpu acc`, previously all NaN.
+
+
+## Re-verified on CCE 21.x (2026-07-29)
+
+The reproducer builds and reports `RESULT: ghosts OK` on both **CCE 21.0.0** and **CCE 21.0.2**,
+consistent with this being fixed in CCE 20.0.0.
+
+Not re-checked on CCE 19.0.0/20.x: those need the whole programming environment switched
+(`cpe/25.03` + `rocm/6.3.1`), not just a `module swap cce`. An attempt that swapped only the
+compiler module produced an unusable environment — `ftn --version` returned nothing and every
+arm reported a build failure. Recorded so the next person does not read that as a result.
