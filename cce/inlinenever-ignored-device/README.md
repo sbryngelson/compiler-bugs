@@ -1,8 +1,8 @@
 # CCE 21: `!DIR$ INLINENEVER` on a device routine is accepted, then overridden with `alwaysinline`
 
-> **Severity:** **Silently ineffective directive on device only** — works correctly on CPU builds  
+> **Severity:** **Directive does not prevent device inlining** — and changes address spaces as a side effect  
 > **Fix belongs to:** CCE Fortran front end  
-> **Status:** Root-caused: `!DIR$ INLINENEVER` is accepted and echoed, then the routine is emitted with `alwaysinline`. Documented behaviour (`man 7 inlinealways`) says placement in the definition should suppress inlining at every call site in the file.
+> **Status:** Root-caused, and **twice corrected** — see 'What this entry got wrong'. The directive is *not* ignored on device: it defers inlining from `optcg` to LLVM. The routine is still fully inlined, and the resulting memory accesses change from `addrspace(1)` to generic pointers.
 
 **Silently ineffective directive.** A procedure carrying both a device-routine directive
 (`!$acc routine seq`) and `!DIR$ INLINENEVER` is emitted into the device IR with the
@@ -200,3 +200,45 @@ and is silently dropped in another is harder to defend than an unimplemented fea
 It also means that in an application which compiles the same sources for both CPU and GPU, these
 directives are **not dead code** — they are load-bearing on the CPU path and inert on the device
 path. Removing them because they appear ineffective on GPU would silently change host codegen.
+
+
+## What this entry got wrong, and the measurement that settled it
+
+This entry has been revised twice. Both earlier readings were produced by comparing IR by eye
+and stopping too early.
+
+| revision | claim | why it was wrong |
+| --- | --- | --- |
+| 1 | "the directive is ignored on device" | based on the `alwaysinline` attribute being present in both arms — true, but not the whole IR |
+| 2 | "device IR is semantically identical" | based on `head -24` of a diff. The output was truncated; real differences were further down |
+| **3 (current)** | the directive **changes** device output — it moves inlining from `optcg` to LLVM | measured with a validated normalizer and a self-control |
+
+### The actual measurement
+
+Same source, with and without `!DIR$ INLINENEVER`, device path, `-O2`:
+
+| | generic `ptr` loads | `addrspace(1)` loads | `inlinedAt` metadata | calls to the leaf |
+| --- | --- | --- | --- | --- |
+| **with** the directive | **8** | **0** | 3 | 0 |
+| without | 4 | 4 | 0 | 0 |
+
+Both are fully inlined — the directive does **not** achieve what it asks for. But it is not a
+no-op either. With it, `optcg`'s early inliner stands down, the routine survives into LLVM IR,
+and LLVM's inliner does the work later — visible as `.i` value suffixes and `inlinedAt` debug
+metadata. The knock-on effect is that **every access comes out through a generic pointer**
+instead of half of them being `addrspace(1)`.
+
+### Why that matters more than the original complaint
+
+Mixed generic / `addrspace(1)` pointers are the trigger for
+[`../instcombine-phi-addrspace-cast`](../instcombine-phi-addrspace-cast). So on CCE 21 this
+directive plausibly **shifts exposure to a different defect** rather than doing nothing. Anyone
+reaching for `cray_noinline` to dodge an inlining-related bug on device should measure the
+resulting IR, not assume the directive is inert.
+
+### Reproducing
+
+`../lib/efficacy/efficacy.sh INLINENEVER` runs the with/without comparison on both paths with a
+self-control. It reports `differs / differs` — takes effect on both — which is what corrected
+this entry. The harness README documents the three normalization bugs that made earlier runs
+report the opposite.
