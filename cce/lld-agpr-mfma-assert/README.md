@@ -387,12 +387,26 @@ End-to-end effect, `grind` (ns/gridpoint/eq/rhs, median of 3, run-to-run varianc
 So the workaround costs ~3% on ordinary kernels and **~61% on the most register-hungry one**,
 whose case-optimization benefit also drops from 1.56x to 1.11x.
 
-**Caveat, stated because it was not proven:** the controlled experiment — rebuilding `igr`
-without `-mai-insts` and re-measuring — was attempted and did **not** produce a valid result.
-`CRAY_CCE_LLD_ARGS` is consumed by `lld` through the environment and is not part of the build
-system's configuration hash, so the rebuild was a no-op and the binary was unchanged (verified
-by md5). The attribution above therefore rests on the register/scratch and `agpr_count` evidence,
-which is strong but circumstantial. Anyone repeating this must force a relink.
+### Standalone confirmation
+
+`regpressure.f90` + `run_regpressure.sh` demonstrate the mechanism in one file, no MFC required:
+eight live 32-element double arrays in an `!$acc routine seq`, compiled with and without the
+flag.
+
+| arm | max vgpr | max agpr | max scratch |
+| --- | --- | --- | --- |
+| baseline | 512 | **256** | **36 B** |
+| `-mattr=-mai-insts` | 256 | **none** | **1060 B** |
+
+Without the flag the allocator uses 256 AGPRs as additional register storage and spills almost
+nothing. With it, VGPRs cap at 256, AGPRs are unavailable, and scratch grows **29x**. This is
+the same signature seen in MFC's `igr` kernels above.
+
+*Note on the MFC-side attribution:* rebuilding `igr` without the flag and re-timing was
+attempted and produced no valid result — `CRAY_CCE_LLD_ARGS` reaches `lld` through the
+environment and is not part of the build system's configuration hash, so the relink was a no-op
+(md5-verified unchanged). The end-to-end 61% figure is therefore correlational; the standalone
+table above is the controlled evidence for the mechanism.
 
 **Why this raises the priority of fixing the assert itself.** `-mai-insts` is currently the only
 practical way to link on CCE 21.x, and it is a global flag. A fix that lets AGPRs remain enabled
