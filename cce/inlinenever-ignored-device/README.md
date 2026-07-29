@@ -99,6 +99,27 @@ If device routines must be `alwaysinline` as an implementation constraint of
 `routine seq`, that is defensible — but then the directive should be **rejected with a
 diagnostic**, not accepted and silently inverted.
 
+**Measured: it is not a constraint.** The same reproducer compiled at lower
+optimization levels emits real out-of-line device calls (`s_swappc_b64`), so the
+offload model supports them and the compiler simply chooses to inline at `-O2`:
+
+| variant | device calls | `v_` ops in kernel |
+| --- | --- | --- |
+| no directive | 0 | 83 |
+| `!DIR$ INLINENEVER` | 0 | 83 |
+| nameless `!DIR$ NOINLINE` at the call site | 0 | 83 |
+| `-hipa0` | 0 | 58 |
+| `-O2` / `-O3` | 0 | 83 |
+| **`-O1`** | **3** | 57 |
+| **`-O0`** | **2** | 43 |
+
+Two conclusions. First, inlining device routines is an `-O2`-and-above decision, not a
+requirement of `routine seq` — so honouring `INLINENEVER` is implementable, and the
+"working as designed" reading does not hold. Second, no spelling of the directive and
+no IPA setting changes anything: `INLINENEVER`, the nameless call-site `NOINLINE`, and
+`-hipa0` are all bit-identical to having no directive at all. Only the optimization
+level moves it, and only by disabling optimization wholesale.
+
 Concretely, this defect converted a one-line fix into a compiler-flag workaround.
 [`../instcombine-phi-addrspace-cast`](../instcombine-phi-addrspace-cast) is an abort
 caused by inlining a leaf routine into a kernel, where GVN then forms a
