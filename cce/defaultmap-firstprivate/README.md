@@ -244,10 +244,39 @@ whose larger kernel does force round-trips through the shared copy and returns N
 So the two reproducers do different jobs and both are needed: **`minimal/` shows the
 mechanism and the occupancy cost; the full one shows the numerical consequence.**
 
-### The occupancy cost, even when answers are right
+### Version scope: CCE 19 only — fixed in CCE 21
 
-3080 bytes of LDS per workgroup buys nothing here. LDS is the resource that caps waves per
-CU, so this is a silent performance tax on every kernel carrying the clause — independent of
-whether the race ever manifests. MFC emits `defaultmap(firstprivate:scalar)` on every OpenMP
-target region from `src/common/include/omp_macros.fpp`, so the tax applies broadly to the
-`--gpu mp` build.
+Measured across all three spellings on both compilers, LDS bytes in the final binary:
+
+| spelling | CCE 19.0.0 | CCE 21.0.2 |
+| --- | --- | --- |
+| `defaultmap(firstprivate:scalar)` | **3080** | 0 |
+| no clause (OpenMP 5.0 scalar default) | **3080** | 0 |
+| explicit `private(...)` | 0 | 0 |
+
+Two things follow, and both correct earlier drafts of this file.
+
+**It is not really about `defaultmap`.** Dropping the clause does not help: the OpenMP 5.0
+default determines the same scalars implicitly and CCE 19 promotes those to LDS too. Only
+naming them in an explicit `private(...)` avoids it. So the trigger is *implicit* data-sharing
+determination, whichever route reaches it — which is why MFlowCode/MFC#1588 was fixed by
+completing the `private()` lists rather than by touching any `defaultmap` clause.
+
+**CCE 21 does not do this at all.** All three spellings allocate zero LDS. An earlier version
+of this section claimed a standing occupancy tax on MFC's `--gpu mp` build because
+`omp_macros.fpp` emits the clause on every target region; that is **wrong for CCE 21** and was
+measured only on 19. On CCE 21 the clause costs no LDS.
+
+Run `minimal/run.sh 19.0.0` for the defect and `minimal/run.sh 21.0.2` to confirm it is gone.
+
+### Relationship to the CCE 21 defect
+
+The two `defaultmap` defects are in **different compiler versions and opposite directions** —
+CCE fixed one and introduced the other:
+
+| defect | CCE 19.0.0 | CCE 21.0.2 |
+| --- | --- | --- |
+| implicit scalars → workgroup LDS (race → NaN) | **present** | fixed |
+| mapped scalar → thread-private ([`../omp-defaultmap-scalar-override`](../omp-defaultmap-scalar-override)) | absent | **present** |
+
+For MFC, which targets CCE 21, only the second applies.
