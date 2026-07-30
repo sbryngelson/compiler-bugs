@@ -755,3 +755,42 @@ compiler; the two probes are the `llc` invocations in the table above. Run it so
 without a wall-clock limit — extracting 160,105 files onto a parallel filesystem outlasted a
 2-hour batch job's early phase, and the failure looked like `worktree add failed` rather than
 a timeout.
+
+## Can a stock `lld` replace CCE's for the device link?
+
+Motivation: CCE 21.0.2 is the newest CCE on Frontier, so there is nothing to upgrade to, and
+stock `llvmorg-21.1.8` does not reproduce this crash. If a stock `ld.lld` could perform the
+offload link, `-mai-insts` — and its ~61% `igr` cost — might be droppable without waiting for
+HPE.
+
+**Feasibility: yes, it links.** CCE's device link takes a single pre-merged module,
+`simulation-cce-openmp-pre-llc.bc` (per `*.resolution.txt`), not the per-source `.amdgpu`
+files. Feeding that to a stock assertions-enabled `ld.lld` 21.1.8:
+
+| linker | options | result | device image |
+| --- | --- | --- | --- |
+| CCE 21.0.2 | `defaults=cray` + gates + `-mai-insts` | ok | 6,877,088 B |
+| CCE 21.0.2 | `defaults=cray` + gates, no `-mai-insts` | ok | 6,872,992 B |
+| stock 21.1.8 | gates, no `-mai-insts` | **ok** | 6,605,424 B |
+| stock 21.1.8 | gates + `-mai-insts` | **ok** | 6,608,496 B |
+
+So CCE's bitcode is not a closed format in practice: a stock linker consumes MFC's real device
+module and emits a plausible image, ~4% smaller — unsurprising without Cray's pipeline.
+
+### What this does NOT establish
+
+Three limits, all of which matter before anyone acts on it:
+
+1. **It does not show `-mai-insts` can be dropped.** The input above came from a build where
+   `-mai-insts` was active *during compilation*. That feature shapes the optimizer, not only
+   codegen, so this bitcode is not the module a no-`-mai-insts` build produces — which is
+   exactly why the same file compiles clean under `llc` either way. The real test needs the
+   `pre-llc.bc` from a build without the flag.
+2. **The gates were still required.** Without
+   `-plugin-opt=-enable-load-in-loop-pre=false -plugin-opt=-disable-promote-alloca-to-vector`,
+   *both* linkers abort — stock 21.1.8 with `castIsValid ... "Invalid cast"`, i.e. the
+   InstCombine defect from [`../instcombine-phi-addrspace-cast`](../instcombine-phi-addrspace-cast),
+   confirming that defect is reachable from MFC's own device code and genuinely upstream.
+3. **The image has never been run.** Nothing here says the stock-linked device code is
+   numerically correct or performant. `defaults=cray` selects Cray's optimization pipeline;
+   dropping it is a large, unmeasured change. Treat the size difference as a warning, not a win.
