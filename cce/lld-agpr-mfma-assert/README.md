@@ -688,9 +688,8 @@ was reached by reading the upstream diff and confirming the guard is absent from
 21.1.8 base. It was never tested, because no assertions-enabled stock LLVM was available —
 ROCm's builds have assertions compiled out, so their clean runs prove nothing.
 
-One has now been built: stock **`llvmorg-21.1.8`** (CCE 21.0.2's exact base),
-`-DLLVM_ENABLE_ASSERTIONS=ON`, at
-`/lustre/orion/cfd154/scratch/sbryngelson/llvm-src/build-2118/bin/{llc,opt}`.
+One can be built with [`../lib/build-reference-llvm.sh`](../lib/build-reference-llvm.sh):
+stock **`llvmorg-21.1.8`** (CCE 21.0.2's exact base) with `-DLLVM_ENABLE_ASSERTIONS=ON`.
 
 Result on the real `repro/crashing_function.bc`, same `llc` invocation that makes CCE assert:
 
@@ -751,7 +750,8 @@ Ask for both halves, and do not claim upstream reproduces it:
 
 ### Reproducing this comparison
 
-`joblogs/resume_llvm2118.sh` builds the tree and runs both probes; it is idempotent and
-refuses to report anything if assertions came out off. Note it must run somewhere without a
-wall-clock limit — extracting 160,105 files onto Lustre outlasted a 2-hour batch job's early
-phase.
+[`../lib/build-reference-llvm.sh`](../lib/build-reference-llvm.sh) builds the reference
+compiler; the two probes are the `llc` invocations in the table above. Run it somewhere
+without a wall-clock limit — extracting 160,105 files onto a parallel filesystem outlasted a
+2-hour batch job's early phase, and the failure looked like `worktree add failed` rather than
+a timeout.

@@ -265,10 +265,15 @@ Most entries here assert where the fix belongs. Until now those attributions wer
 — from reading upstream diffs, and from comparing against ROCm's LLVM, whose **assertions are
 compiled out** so its clean runs cannot distinguish "fixed" from "not caught".
 
-A stock **`llvmorg-21.1.8`** — CCE 21.0.2's exact base — is now built with
-`-DLLVM_ENABLE_ASSERTIONS=ON` at
-`/lustre/orion/cfd154/scratch/sbryngelson/llvm-src/build-2118/bin/`. Rebuild it with
-`joblogs/resume_llvm2118.sh` (idempotent; refuses to report if assertions came out off).
+Build one with [`lib/build-reference-llvm.sh`](lib/build-reference-llvm.sh) — a stock
+**`llvmorg-21.1.8`** (CCE 21.0.2's exact base) with `-DLLVM_ENABLE_ASSERTIONS=ON`. It is
+idempotent, resumes from whatever phase it reached, and **aborts if assertions came out off**,
+since a non-assertions reference would silently invalidate every comparison made against it.
+
+```bash
+lib/build-reference-llvm.sh                      # llc + opt
+lib/build-reference-llvm.sh llvmorg-21.1.8 llc opt lld   # add lld for link-crash work
+```
 
 Every IR-level reproducer run through it, same invocation as CCE:
 
