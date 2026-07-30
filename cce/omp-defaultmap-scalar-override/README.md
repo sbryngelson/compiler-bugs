@@ -272,3 +272,18 @@ is the one with an LDS global). That distinguishes this from
 [`../defaultmap-firstprivate`](../defaultmap-firstprivate), where scalars that should be
 private are instead promoted to workgroup-shared LDS. Opposite directions — two defects, not
 one.
+
+### Minimal reproducer (`minimal/`)
+
+`minimal/priv_atomic.f90` — 30 lines — reproduces the defect with no application code, and
+`minimal/run.sh` scores both the runtime symptom and the IR cause:
+
+```
+  defaultmap                     duplicates=4095   atomicrmw addrspace=5
+  explicit (no defaultmap)       duplicates=0      atomicrmw addrspace=1
+```
+
+Four scored conditions, two of them controls, so an environment problem cannot pass as the
+defect. `count` is explicitly `map(tofrom:)` — shared — and each `!$omp atomic capture` must
+hand out a distinct value; under `defaultmap` every thread increments a private copy from the
+same starting value and all 4096 capture the same number.

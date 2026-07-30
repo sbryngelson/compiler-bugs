@@ -220,3 +220,34 @@ that should be shared — the **opposite** direction. Measured, not assumed:
 
 Both are `defaultmap` assigning the wrong data-sharing attribute, in opposite directions.
 Report them as two defects.
+
+### Minimal reproducer (`minimal/`)
+
+`minimal/lds_scalar.f90` — 40 lines, no application code — isolates the mechanism. It is
+scored on **LDS bytes in the final device binary**, not on a wrong answer:
+
+| build | `group_segment_fixed_size` |
+| --- | --- |
+| `defaultmap(firstprivate:scalar)` | **3080 bytes** |
+| explicit `private(...)`, same scalars | **0 bytes** |
+
+A scalar covered by `defaultmap(firstprivate:...)` is per-thread by definition and needs no
+shared memory at all. Allocating workgroup LDS for it is non-conforming on its face, and it
+is measurable without provoking a race.
+
+**This minimal program still prints PASS**, and that is worth stating plainly rather than
+hiding: with each write immediately followed by that thread's own read, the value stays in a
+register, the shared copy is never read back, and the race is not observable. Scaling to 96
+scalars did not change that. The wrong-answer demonstration remains `../cray_defaultmap.f90`,
+whose larger kernel does force round-trips through the shared copy and returns NaN.
+
+So the two reproducers do different jobs and both are needed: **`minimal/` shows the
+mechanism and the occupancy cost; the full one shows the numerical consequence.**
+
+### The occupancy cost, even when answers are right
+
+3080 bytes of LDS per workgroup buys nothing here. LDS is the resource that caps waves per
+CU, so this is a silent performance tax on every kernel carrying the clause — independent of
+whether the race ever manifests. MFC emits `defaultmap(firstprivate:scalar)` on every OpenMP
+target region from `src/common/include/omp_macros.fpp`, so the tax applies broadly to the
+`--gpu mp` build.
