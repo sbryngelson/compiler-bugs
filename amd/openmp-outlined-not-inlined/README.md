@@ -18,15 +18,28 @@ the loop-body callback of the `__kmpc_*_static_loop_*` entries (a direct functio
 treating it as opaque. Also removes the trigger for
 [#198621](https://github.com/llvm/llvm-project/issues/198621).
 
-Premerge on #211287 has failed only on unrelated tests, and never on the same one twice. An early
+Premerge on #211287 has only ever failed on unrelated tests, and never on the same one twice. One
 run failed `clang-tidy/infrastructure/update-checks-list.test`, which fails on unmodified `main` and
 so fails on every open PR ([#211393](https://github.com/llvm/llvm-project/issues/211393), fix in
-[#210574](https://github.com/llvm/llvm-project/pull/210574)). The current run fails
+[#210574](https://github.com/llvm/llvm-project/pull/210574)). A later run failed
 `lldb-api :: functionalities/thread/concurrent_events/TestConcurrentSignalWatch.py`, a signal/
 watchpoint race with no OpenMP in the debuggee. The PR changes `OpenMPOpt.cpp` and one `.ll` test and
 touches no lldb code, so neither is attributable to it; the lldb flakiness is documented in
 `../NOT-BUGS.md` (a same-commit re-run of #211566 failed a different lldb test each time). A note to
 that effect is posted on the PR so reviewers do not stall on the red mark.
+
+**Both rebased 2026-07-30** onto `17088c9b104e`, which also cleared that stale red mark:
+#211287 `84d1e6330cd3` -> `d689283d035a`, #211255 `1dbe2bd2e4bb` -> `3ab07ee7a223`. Each rebase was
+verified content-free against the PR diff first (#211255 moved one hunk header, `@@ -2152` to
+`@@ -2151`, because `InlineCost.cpp` shifted a line upstream; the added and removed lines are
+identical).
+
+Both branches had been updated by *merging* `main` in rather than rebasing, so their heads were
+merge commits, and #211255 sat on `02c51adb8ff2` — the same never-landed commit behind the phantom
+FreeBSD failure on #211137. Linear history also makes them squash-merge cleanly. Reviewers were
+requested on both at filing (#211287: @abidh, @skatrak, @jdoerfert, @shiltian; #211255: @arsenm,
+who reviewed on 07-22 and whose three points were taken the same day), so the eight days of silence
+is not a missing-reviewer problem; both were pinged after the rebase.
 
 ## Tracking
 

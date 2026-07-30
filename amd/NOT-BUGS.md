@@ -137,6 +137,14 @@ before every push; a bad base produces failures nowhere near the change. Second,
 is not your fault is not the same as diagnosing it, and "unrelated/flaky" is the most comfortable
 wrong answer available — prefer the cheap corrective action that produces a decisive signal.
 
+**Update 2026-07-30: this was systemic, not a one-off.** All four PRs from this batch were affected.
+`llvm#211287` and `llvm#211255` were also stale, and had additionally been updated by *merging*
+`main` into the branch rather than rebasing, so their heads were merge commits; `llvm#211255` sat on
+`02c51adb8ff2`, the same never-landed commit as `llvm#211543`. Rebasing all of them onto real `main`
+fixed a phantom FreeBSD failure on one and cleared a week-old red lldb mark on another. Treat "is
+the base an ancestor of `origin/main`, and is the head a real commit rather than a merge" as part of
+the pre-push checklist, not as debugging done after CI goes red.
+
 **`lldb-api` failures in LLVM premerge are noise, and a same-commit re-run proves it (2026-07-23).**
 Two PRs that touch no lldb code both went red on lldb:
 
