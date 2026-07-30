@@ -667,17 +667,37 @@ The OpenMP equivalent is `thread_limit(512)`.
 So the deployable shape is a `vector_length(512)`/`thread_limit(512)` clause on the crashing
 kernels, with `-mai-insts` dropped entirely.
 
-### What is still unmeasured
+### Both open questions are now answered — measured
 
-Two things gate this from being a recommendation:
+**1. How many kernels are affected: two.** `lld` aborts at the first bad function, so this had
+to be found by iterating. With `vector_length(512)`/`thread_limit(512)` on the two bubbles
+kernels (`m_bubbles_EE.fpp:187` and `m_bubbles_EL.fpp:633`), MFC's igr case-optimized build
+links with **`-mai-insts` removed entirely** — `rc=0`, zero crash markers — and the resulting
+`pre-llc.bc`, i.e. the real `lld` input from a build without the flag, compiles clean under
+`llc`. There is no third crasher in this configuration.
 
-1. **How many kernels are affected is unknown.** `lld` aborts at the *first* bad function, so
-   the crash logs in `artifacts/` name exactly one each. The count only emerges by fixing one
-   and re-linking, iteratively. If it is a long tail, per-kernel clauses stop being practical.
-2. **The performance cost is unmeasured.** `vector_length(512)` doubles the work-group size,
-   which changes occupancy and register budget per thread. It is plausibly much cheaper than
-   losing AGPRs program-wide, but "plausibly cheaper" is not a measurement — it needs the same
-   grind comparison used for the `-mai-insts` cost.
+**2. The performance cost: it is a large gain, not a cost.** Three runs per arm, identical
+source trees differing only in the flag, binaries md5-verified distinct (`32cec04e` vs
+`df9608e8`) so the no-op-relink trap is excluded:
+
+| arm | grind (ns/gridpoint/eq/rhs) | median |
+| --- | --- | --- |
+| `-mattr=-mai-insts` | 3.352, 3.334, 3.352 | **3.352** |
+| `vector_length(512)`, no `-mai-insts` | 2.122, 2.122, 2.120 | **2.122** |
+
+**`vector_length` is 36.7% faster.** Inverted: `-mai-insts` costs **+58%** on `igr`. Run-to-run
+variance is under 1%, so the separation is far outside noise.
+
+That independently confirms the ~61% figure previously carried in this file, which was
+explicitly labelled correlational because the earlier attempt to rebuild without the flag was a
+silent no-op. This measurement is not: the two binaries differ.
+
+### What is still unverified
+
+The 36.7% is a **performance** result on one benchmark. Correctness of a `-mai-insts`-free
+build is **not** established here — that needs the full test suite on both backends, since
+removing the flag changes codegen for every kernel in the program, not just the two carrying
+the clause. Do not ship on the strength of the grind number alone.
 
 Neither is a reason to prefer `-mai-insts`; both are reasons not to quote a number yet.
 
