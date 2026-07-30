@@ -70,6 +70,10 @@ reproducer, so it is not a fix.
 Distinguished from 1 and 2 by having **no assertion text**: it manifests as glibc heap
 corruption, so grep for `free()` / `munmap_chunk` rather than `Assertion`. CCE 20.x only.
 
+The trigger is **`-plugin-opt=defaults=cray`**. The same CCE 20.0.2 linker, on the same
+module, aborts with that flag and links cleanly without it (3/3 deterministic each way), and
+upstream LLVM 20/21/22 all link it cleanly. Not fixable by a backport — see the entry.
+
 ## Triaging a crash that is not in the table
 
 1. **Confirm it is a link crash, not a compile or toolchain failure.** Check what actually
@@ -125,10 +129,11 @@ than fixes that did not exist yet. The third postdates it.
 **But absence of the fix is not the same as presence of the bug.** Tested against stock
 `llvmorg-21.1.8` built with assertions on:
 
-| defect | stock 21.1.8 behaviour | reading |
+| defect | stock LLVM behaviour | reading |
 | --- | --- | --- |
-| #2 InstCombine invalid cast | **asserts**, same as CCE | genuine upstream defect; backport is the whole ask |
-| #1 AGPR dead valno | **clean**, even at max register pressure | the valno is introduced Cray-side; the missing guard is latent upstream |
+| #2 InstCombine invalid cast | **asserts** on stock 21.1.8, same as CCE | genuine upstream defect; backport is the whole ask |
+| #1 AGPR dead valno | **clean** on stock 21.1.8, even at max register pressure | the valno is introduced Cray-side; the missing guard is latent upstream |
+| #3 Infer address spaces | **clean** on stock LLVM 20, 21.1.8 and 22 — and clean on **CCE's own lld** once `-plugin-opt=defaults=cray` is dropped | Cray-side by construction: the trigger is a pipeline no stock LLVM can express |
 
 So for #1 the vendor ask is *two* things — the CCE-side allocation that creates a dead/PHI
 valno, plus the upstream guard that would make it harmless — not "you missed a backport".

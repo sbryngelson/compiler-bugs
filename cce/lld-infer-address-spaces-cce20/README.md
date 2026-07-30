@@ -207,3 +207,41 @@ and with that worked around MFC passes **627/627 on both offload backends**.
 
 Kept because it documents that *no* CCE between 19 and 21 could link MFC — 20.x for this reason,
 21.x for the AGPR assert — which is the context for why the port skipped 20.x entirely.
+
+## Root cause: the trigger is `-plugin-opt=defaults=cray`
+
+Tested with an assertions-enabled stock `ld.lld` built from `llvmorg-21.1.8`
+(see `../lld-agpr-mfma-assert/README.md`), plus ROCm's LLVM 20 as a **version-matched**
+upstream control. Heap corruption aborts whether or not assertions are compiled in, so
+ROCm's non-assertions builds are usable evidence here — unlike for the assert-based defects.
+
+| linker | LLVM | `defaults=cray` | result |
+| --- | --- | --- | --- |
+| CCE 20.0.2 | 20.x + Cray | **yes** | **abort**, heap corruption in `Infer address spaces` |
+| **CCE 20.0.2** | 20.x + Cray | **no** | **links cleanly** |
+| ROCm 7.0.2 | 20 (version-matched) | n/a | links cleanly |
+| stock `llvmorg-21.1.8` | 21.1.8 +assert | n/a | links cleanly |
+| ROCm 7.2.0 | 22 | n/a | links cleanly |
+
+Deterministic: three runs each way, `rc=134 134 134` with the flag and `rc=0 0 0` without.
+
+**The same linker binary, on the same module, crashes or succeeds purely on the presence of
+`-plugin-opt=defaults=cray`.** That option selects Cray's own optimization pipeline, which no
+stock LLVM can express — so this is CCE-side by construction, and no upstream backport
+addresses it. The correct statement is not "CCE 20's lld corrupts the heap" but:
+
+> The Cray-specific pass configuration selected by `-plugin-opt=defaults=cray` drives
+> `Infer address spaces` into heap corruption on this module. The same linker with the stock
+> pipeline links it cleanly, as does upstream LLVM 20, 21 and 22.
+
+This also removes the earlier ambiguity about the stock comparison: dropping `defaults=cray`
+for the stock linkers looked like an unmatched control, but the CCE-without-the-flag row shows
+the flag *is* the variable. The control was fair.
+
+### Does that give a workaround?
+
+Not a usable one. `defaults=cray` is added by the Cray compiler driver itself, not by MFC, and
+`CRAY_CCE_LLD_ARGS` appends options rather than removing them — so there is no supported way to
+suppress it from outside. Recorded because "just don't pass that flag" is the obvious first
+suggestion and it is not actionable from the application side. It is, however, exactly the
+right thing to hand HPE: a one-flag reproducer on their own binary.
