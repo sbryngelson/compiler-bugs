@@ -34,12 +34,16 @@ rm -f _b _b.elf ./*.i
 echo
 guard_verdict 0 "${ex:-?}" "control: explicit private() allocates no LDS"
 guard_verdict yes "$([ "${dm:-0}" -gt 0 ] 2>/dev/null && echo yes || echo no)" \
-    "defaultmap allocates LDS for per-thread scalars (got ${dm} bytes)"
+    "implicitly-determined scalars get workgroup LDS (got ${dm} bytes)"
 echo
 if [ "$GUARD_RC" -eq 0 ]; then
-    echo "RESULT: BUG PRESENT (as documented) -- defaultmap(firstprivate:scalar) gave"
-    echo "        per-thread scalars workgroup extent, consuming ${dm} bytes of LDS that"
-    echo "        the explicit spelling of the same scalars does not need."
+    echo "RESULT: BUG PRESENT (as documented) -- scalars whose data-sharing attribute is"
+    echo "        determined implicitly were given workgroup extent, consuming ${dm} bytes"
+    echo "        of LDS that the explicit private() spelling does not need."
+    echo
+    echo "        Not specific to defaultmap: the bare OpenMP 5.0 scalar default allocates"
+    echo "        the same ${dm} bytes. Only an explicit private() avoids it."
+    echo "        CCE 21.0.2 allocates 0 for all three spellings -- try ./run.sh 21.0.2."
     echo
     echo "        NOTE: this program still prints PASS. With one write immediately"
     echo "        followed by its own read, the value stays in a register and the shared"

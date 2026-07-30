@@ -287,3 +287,63 @@ Four scored conditions, two of them controls, so an environment problem cannot p
 defect. `count` is explicitly `map(tofrom:)` — shared — and each `!$omp atomic capture` must
 hand out a distinct value; under `defaultmap` every thread increments a private copy from the
 same starting value and all 4096 capture the same number.
+
+## This is live in MFC on CCE 21 — `minimal/atomic_update.f90`
+
+The `atomic capture` reproducer above is the spec-level case. MFC's actual shape uses
+`atomic update`, and it fails **harder**:
+
+```
+CCE 21.0.2, --gpu mp        atomic_update: sum = 0     expected 4096   FAIL
+  same, no defaultmap       atomic_update: sum = 4096  expected 4096   PASS
+OpenACC (--gpu acc)         acc atomic_update: sum = 4096              PASS
+```
+
+Not 4095 duplicates — the accumulated value comes back as **0**. Every thread's contribution
+is lost, because each updates a private copy and none of them is the mapped one.
+
+### Why this matters more than the capture case
+
+MFC writes exactly this, in at least five places:
+
+```fortran
+$:GPU_PARALLEL_LOOP(private='[...]', copy='[adap_dt_stop_sum]')
+    ...
+    $:GPU_ATOMIC(atomic='update')
+    adap_dt_stop_sum = adap_dt_stop_sum + adap_dt_stop
+```
+
+`copy=` becomes `map(tofrom:)`, and `omp_macros.fpp` adds `defaultmap(firstprivate:scalar)`
+to every OpenMP loop directive on CCE — so the mapped scalar is privatised and the sum is
+lost. Sites:
+
+| file | scalar | what it counts |
+| --- | --- | --- |
+| `m_bubbles_EE.fpp:187` | `adap_dt_stop_sum` | fail-safe: adaptive-dt iteration cap hit |
+| `m_bubbles_EL.fpp:636` | `adap_dt_stop_sum` | same, Euler–Lagrange path |
+| `m_ibm.fpp:579` | `num_gps_local` | ghost-point count |
+| `m_ibm.fpp:479` | `bounds_error` | out-of-bounds flag |
+| `m_collisions.fpp:349` | `num_considered_collisions` | collision count |
+
+**The failure mode is why the test suite does not catch it.** The wrong answer is `0`, and
+`0` is exactly the value these counters hold when nothing is wrong. A fail-safe that should
+fire silently never fires; an error flag that should be set reads clean. Golden-file
+comparison cannot see a diagnostic counter that is correctly zero in the reference run and
+wrongly zero in the broken one.
+
+### The fix is a one-token change, with precedent in MFC's own macro
+
+`src/common/include/omp_macros.fpp` already omits the clause for AMD flang — which does not
+implement `defaultmap(firstprivate:...)` at all and rejects it at compile time:
+
+```fortran
+#:elif MFC_COMPILER == CCE_COMPILER_ID
+    #:set omp_start_directive = '!$omp target teams distribute parallel do defaultmap(firstprivate:scalar) '
+#:elif MFC_COMPILER == AMD_COMPILER_ID
+    #:set omp_start_directive = '!$omp target teams distribute parallel do '
+```
+
+Deleting `defaultmap(firstprivate:scalar)` from the CCE branch makes it identical to the AMD
+branch. It is semantically neutral: OpenMP 5.0 already makes scalars firstprivate by default
+in a `target` region, so the clause only restates the default — while additionally, on CCE,
+overriding explicit `map()` clauses it has no business touching.

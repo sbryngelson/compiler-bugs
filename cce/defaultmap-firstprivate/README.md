@@ -1,8 +1,9 @@
 # Cray CCE-19: `defaultmap(firstprivate:scalar)` does not actually firstprivate the scalars
 
-> **Severity:** Abort  
+> **Severity:** **Silent wrong answers** (NaN at `-O3`, ~0.6% wrong at `-O1`) — not an abort  
 > **Fix belongs to:** CCE — filed as OLCFHELP-26859  
-> **Status:** CCE 19/20-era. Superseded in practice by the CCE 21 `defaultmap` defects, which share the theme of `defaultmap` overriding an explicit clause.
+> **Status:** **CCE 19.0.0 only; measured absent on CCE 21.0.2.** Not superseded by, and not the same defect as, the CCE 21 `defaultmap` bug — see the version matrix below. The two point in opposite directions.  
+> **Trigger:** *implicit* data-sharing determination — the bare OpenMP 5.0 default reproduces it identically, so this is not specific to the `defaultmap` clause.
 
 Standalone reproducer for a Cray Fortran (CCE 19) OpenMP target-offload bug.
 
@@ -203,10 +204,16 @@ This also explains the `-O1` behaviour noted above: at `-O1` the races are less 
 interleaved, so the answer comes out finite but ~0.6% wrong rather than NaN. Same defect,
 quieter symptom — which is the dangerous case.
 
-**The vendor-facing statement:** CCE applies its LDS-promotion path to scalars covered by
-`defaultmap(firstprivate:scalar)`, giving them workgroup extent where the clause requires
-per-thread extent. The explicit `firstprivate(...)` spelling of the same scalars produces no
-LDS at all and is correct, so the promotion decision is specific to the `defaultmap` path.
+**The vendor-facing statement:** CCE 19 applies its LDS-promotion path to scalars whose
+data-sharing attribute is determined **implicitly**, giving them workgroup extent where
+per-thread extent is required. It applies equally whether the scalars are covered by
+`defaultmap(firstprivate:scalar)` or by the bare OpenMP 5.0 scalar default — both allocate
+3080 bytes of LDS on the minimal case. Naming the same scalars in an explicit `private(...)`
+produces no LDS and is correct.
+
+So the discriminator is *explicit vs implicit determination*, not the `defaultmap` clause.
+An earlier revision of this file said the promotion was specific to the `defaultmap` path;
+the bare-default measurement disproves that.
 
 ### Not the same bug as `omp-defaultmap-scalar-override`
 
