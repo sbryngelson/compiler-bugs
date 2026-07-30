@@ -201,3 +201,49 @@ the bad analysis flows.
 Exit codes follow the repo-wide convention: **0 means reality matched this document**
 (the defect is still present), nonzero means something changed and needs a human.
 See `../README.md`.
+
+## Root cause: stores through the NON-contiguous dummies are dropped
+
+The callee mixes contiguity across its three assumed-shape dummies — which is what the
+directory name refers to:
+
+```fortran
+real(8), intent(inout)              :: cell_boundaries(-1 - offset%beg:)   ! not contiguous
+real(8), intent(inout)              :: cell_centers(-buff_size:)           ! not contiguous
+real(8), contiguous, intent(inout)  :: cell_widths(-buff_size:)            ! CONTIGUOUS
+```
+
+Run it and the corruption splits exactly along that declaration:
+
+```
+ghost dx   = 3*3.33333333333333355E-3     <- cell_widths,     contiguous      CORRECT
+ghost x_cb = 3*0.                         <- cell_boundaries, not contiguous  DROPPED
+ghost x_cc = 3*0.                         <- cell_centers,    not contiguous  DROPPED
+```
+
+All three arrays are written by the same loop in the same call. Only the one whose dummy
+carries `contiguous` keeps its stores; the two without it are silently discarded — not
+mis-ordered or partially written, but gone, leaving the ghost cells at their initial `0`.
+
+That also explains the fix: `v1_callee.f90` differs from `mod_callee.f90` by exactly two
+words — adding `contiguous` to the other two dummies — and all three arrays then survive.
+
+**The vendor-facing statement:**
+
+> When a procedure declares a mix of `contiguous` and non-`contiguous` assumed-shape dummy
+> arguments, CCE 19's interprocedural analysis discards stores made through the
+> non-`contiguous` ones. Declaring every dummy `contiguous` (or disabling IPA on the caller
+> with `-Oipa0`) restores them.
+
+Note which side the `-Oipa0` workaround has to go on: disabling IPA on the **caller** hides
+it, disabling it on the callee alone does not — recorded in the verdict table above. The bad
+assumption flows caller→callee, which is consistent with the analysis propagating one dummy's
+contiguity to its siblings.
+
+### Why this was dangerous in MFC
+
+The same shape appeared in `s_mpi_sendrecv_variables_buffers`, where `x_cb`/`x_cc` are grid
+coordinate arrays and the dropped stores left ghost cells holding zeros — a silently wrong
+domain boundary rather than a crash. Worked around in MFlowCode/MFC#1679 by making the
+declarations uniform. Anyone reverting that on a CCE 19 toolchain reintroduces silent grid
+corruption.
