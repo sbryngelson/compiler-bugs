@@ -151,3 +151,57 @@ elsewhere in this investigation.
 
 Emit no `defaultmap` clause. That is what MFC does now
 (`a5565114`), which also fixes defects 05 and 11.
+
+## Root cause: `defaultmap` puts `private()` variables into the map list
+
+Established from the runtime mapping traces (`CRAY_ACC_DEBUG=2`), which show the defect
+directly rather than by inference. The directive under test names `length` explicitly:
+
+```fortran
+!$omp target teams distribute parallel do defaultmap(present:aggregate) map(from: out) private(length)
+```
+
+A variable in `private()` gets a per-thread copy and is **not mapped** — there is no data
+transfer for it. That is what the control does, and what neither `defaultmap` arm does:
+
+| arm | items transferred | what happens to `length` | outcome |
+| --- | --- | --- | --- |
+| `priv_bare` (no `defaultmap`) | **1** — `out` only | not mapped | correct |
+| `defaultmap(tofrom:aggregate)` | **2** | `allocate, copy to acc 'length(:)' (24 bytes)` | passes, but the transfer should not exist |
+| `defaultmap(present:aggregate)` | **2** | present-table lookup for `length(:)` | **abort** |
+
+Both `defaultmap` arms pull `length` into the map list. The category only decides how the
+mistake surfaces:
+
+- **`tofrom`** allocates and copies 24 bytes that should never move, and gives the whole
+  workgroup one shared copy of a variable the program declared private. It still prints PASS
+  here only because each thread writes `length` and reads it back immediately, so the value
+  stays in a register — the same reason the minimal case in
+  [`../defaultmap-firstprivate`](../defaultmap-firstprivate) passes despite a real defect.
+- **`present`** demands the variable already be resident. A private variable was never
+  mapped, so the lookup cannot succeed, and the runtime aborts with
+  `find_in_present_table failed for 'length(:)'`.
+
+So the correct statement is **not** "`defaultmap(present:...)` overrides `private()`" — it is:
+
+> CCE includes variables named in an explicit `private()` clause in the `defaultmap` category
+> mapping. `defaultmap(tofrom:aggregate)` silently transfers them and shares one copy across
+> the workgroup; `defaultmap(present:aggregate)` aborts because they are not resident. The
+> abort is the loud symptom of a mapping that should not exist at all.
+
+That reframing matters for the vendor: fixing only the `present` abort would leave the
+`tofrom` case silently sharing a private array.
+
+### Relevance to MFC
+
+`src/common/include/omp_macros.fpp` emits, for CCE:
+
+```
+defaultmap(tofrom:aggregate) defaultmap(present:allocatable) defaultmap(present:pointer)
+```
+
+on every OpenMP target region. Any **aggregate, allocatable or pointer** named in a
+`GPU_PARALLEL_LOOP` `private=` list is therefore a candidate: an aggregate would be silently
+transferred and shared, an allocatable or pointer would abort. MFC's `private=` lists are
+predominantly scalars, which is likely why this has not fired — but that is a property of
+current usage, not a guarantee, and adding a private array to a kernel would expose it.
