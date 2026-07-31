@@ -178,3 +178,33 @@ The real reproducer fails outright without the fix (`ld.lld: error: undefined sy
 _FortranAAssign`), which is what a counterfactual should look like. Before trusting a check, run it
 against the unpatched build once and confirm it actually fails; a green result from a test that
 cannot go red says nothing.
+
+**Three ways a green test number lied in one afternoon (2026-07-31).** Verifying `llvm#211255` and
+`llvm#211287` for their PR descriptions produced three wrong results in a row, none of them a real
+regression, all from trusting a count without checking what actually ran.
+
+1. **Stale binaries again.** `ninja opt` then running `llvm/test/CodeGen/AMDGPU` reported **22
+   failures**. Those tests drive `llc`, which was still the previous build. Rebuilding `llc`:
+   22 -> 1. This is the same trap as the 2026-07-23 entry above, hit again after it was written
+   down, because "I only touched an analysis pass, so `opt` is enough" felt obviously true.
+2. **A rebuild running concurrently with the suite.** A background lit run overlapped with a
+   `git apply -R` plus `ninja opt` in the same tree, and reported ~10 extra failures across
+   InstCombine, SLPVectorizer and IndVarSimplify. Pure contamination: the binary was being relinked
+   underneath the running tests. Discarded and re-run with nothing else touching the build.
+3. **An unread lit warning.** Both PR descriptions claimed coverage of
+   `llvm/test/Analysis/InlineCost`. That path **does not exist** — not at the local base, and not on
+   `origin/main`. lit prints `warning: input '...' contained no tests` and carries on with the paths
+   that do exist, so the run still looked healthy and the total still looked plausible. The inliner
+   tests are `llvm/test/Transforms/Inline`, which `llvm/test/Transforms` already covers, so the
+   coverage was real and the conclusion held — but a suite named in a public PR description had
+   never been run. It had to be corrected on the PR after the fact.
+
+The common root: a passing count is evidence only if you know which tests produced it. Cheap habits
+that would have caught all three: build every tool the suite invokes, never build while a suite is
+running, read lit's warnings and not just its summary, and confirm each suite path resolves
+(`llvm-lit -s <path>` on its own, or `git ls-files`) before quoting it anywhere public.
+
+Verified figures for that work, per-suite so the total can be checked: `llvm/test/Transforms`
+11676 + `llvm/test/CodeGen/AMDGPU` 4920 = 16596 discovered, 14668 passed, 39 expected failures, and
+one failure, `Transforms/ThinLTOBitcodeWriter/no-type-md.ll`, confirmed pre-existing by rebuilding
+from a clean tree with no patch applied.
