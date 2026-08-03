@@ -111,6 +111,14 @@ Merged: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058)
 Upstream issue (still open): [llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621).
 Original report: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601)
 
+**Open question after `llvm#211287` landed (2026-08-03).** That PR's description says it "removes
+the trigger for" #198621, deliberately weaker than "fixes". Step 2 of this root cause is the same
+`MayUseNestedParallelism=1` that #211287 now refines to 0, so the path that reached the bad
+`NumThreads` should no longer be taken from flang workshare loops. Whether the wrong-stride defect
+in `DistributeFor` is *fixed* or merely *unreachable from here* has *not* been tested against
+post-merge `main`, and #198621 is still open. Re-run the reproducer before saying anything on the
+issue: if the defect is only unreachable, it stays open and the entry here should say so.
+
 ---
 
 ## Also in this repo: VLA private bug — FIXED upstream

@@ -4,9 +4,21 @@ Target: gfx90a (MI250X), also reproduced on gfx942/gfx950. Compiler: upstream fl
 (`llvm/llvm-project @ 119b31fd3`, built with `clang;lld;mlir;flang` + `openmp/offload/flang-rt`
 runtimes and an `amdgcn-amd-amdhsa` runtime target).
 
-**Status (2026-07-22): OPEN, fix rerouted.** Reported: [llvm/llvm-project#211132](https://github.com/llvm/llvm-project/issues/211132) (open).
-The original `alwaysinline` fix [llvm/llvm-project#211136](https://github.com/llvm/llvm-project/pull/211136)
-was **closed without merging**. Superseded by two narrower PRs, both open:
+**Status (2026-08-03): FIXED UPSTREAM.**
+[llvm/llvm-project#211287](https://github.com/llvm/llvm-project/pull/211287) was **merged by
+@shiltian 2026-08-03 14:21 UTC as
+[`4905109b00e6`](https://github.com/llvm/llvm-project/commit/4905109b00e6916a310cf7c521bd8df19c0d4a11)**,
+and [#211132](https://github.com/llvm/llvm-project/issues/211132) closed as completed. That is the
+fix for the defect described here: the 212 -> 94 VGPRs, 48 B -> 0 scratch, 2 -> 5 occupancy and
+1.28-1.47x end-to-end numbers below are what it delivers.
+
+[#211255](https://github.com/llvm/llvm-project/pull/211255) is still open, approved by @arsenm and
+awaiting a committer. It is an independent correctness fix rather than a fix for #211132, so this
+entry is complete without it.
+
+Original status, kept for the history: the `alwaysinline` fix
+[llvm/llvm-project#211136](https://github.com/llvm/llvm-project/pull/211136)
+was **closed without merging**, and superseded by two narrower PRs:
 [#211255](https://github.com/llvm/llvm-project/pull/211255) — an independent correctness fix, not a
 fix for #211132; don't apply the reduced cold-callsite inline threshold in non-callable functions, i.e.
 hardware entry points such as GPU kernels, where an out-of-line call is register allocated against the
@@ -41,11 +53,12 @@ requested on both at filing (#211287: @abidh, @skatrak, @jdoerfert, @shiltian; #
 who reviewed on 07-22 and whose three points were taken the same day), so the eight days of silence
 is not a missing-reviewer problem; both were pinged after the rebase.
 
-**Both approved 2026-07-31, both green, both awaiting a committer.** @shiltian approved #211287
-about ten hours after the ping; @arsenm approved #211255. Neither can be self-merged — see the
-no-commit-access note in `../runtimes-fortran-modules-triple/README.md`, and note that #211137 sat
-approved for eleven days until a committer was actually asked. Land requests posted to both on
-2026-08-03.
+**Both approved 2026-07-31; #211287 landed 2026-08-03.** @shiltian approved #211287 about ten hours
+after the ping and merged it once asked; @arsenm approved #211255, which is still waiting on a
+committer. Neither could be self-merged — see the no-commit-access note in
+`../runtimes-fortran-modules-triple/README.md`. Both of the merges here followed the same pattern as
+#211137: approved and green is not enough, someone has to be asked. Land requests were posted to
+both on 2026-08-03 and #211287 was merged the same day.
 
 **A reviewer suggestion sat unapplied for three days on #211255 (2026-08-03).** @arsenm left a
 GitHub *suggestion* inline on 07-31 asking for the cheaper predicate first,
@@ -71,8 +84,8 @@ apply the PR patch at the local base and edit on top instead.
 
 | Where | Link / ID |
 |-------|-----------|
-| llvm/llvm-project | [#211132](https://github.com/llvm/llvm-project/issues/211132) — open |
-| Fix PR | [#211287](https://github.com/llvm/llvm-project/pull/211287) — resolve the static-loop callback in `AAKernelInfo`; **approved** @shiltian, green, awaiting a committer |
+| llvm/llvm-project | [#211132](https://github.com/llvm/llvm-project/issues/211132) — **closed, completed** |
+| Fix PR | [#211287](https://github.com/llvm/llvm-project/pull/211287) — **merged** `4905109b00e6` by @shiltian; resolve the static-loop callback in `AAKernelInfo` |
 | Related PR | [#211255](https://github.com/llvm/llvm-project/pull/211255) — cold-callsite threshold in non-callable functions; **approved** @arsenm, green, awaiting a committer |
 | Withdrawn | [#211136](https://github.com/llvm/llvm-project/pull/211136) — always-inline device-outlined regions (closed unmerged) |
 | Source | [MFC](https://github.com/MFlowCode/MFC) |
