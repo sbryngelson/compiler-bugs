@@ -143,9 +143,27 @@ does not miscompile, it fails to link.
 ### Measurement error worth not repeating
 
 An earlier pass at this concluded the reproducer had gone stale and no longer triggered on any arch.
-That was wrong, and the cause was adding **`-O2`**. The command documented above carries no `-O`
-flag; at `-O2` the device heap temporary for the array expression is optimised away, which removes
-step 3 of the cause chain, so the kernel passes. Every conclusion drawn from that run was void.
+That was wrong: the runs had added **`-O2`**, and the documented command carries no `-O` flag at all.
+Every conclusion from that run was void.
+
+**The trigger is the absence of an `-O` flag, not the optimisation level.** Measured A/B, AFAR
+23.2.0, gfx90a, MI250X, only `-O` varying:
+
+| flags | result |
+|---|---|
+| *(none, as documented)* | **FAIL: 31 of 64** |
+| `-O0` | PASS |
+| `-O1`, `-O2`, `-O3` | PASS |
+
+`-O0` passes, and `-O0` optimises nothing, so "optimisation removes the device temporary" is **not**
+the mechanism — an earlier revision of this file said it was, and that was a guess that fit the
+`-O2` datum and nothing else. `LIBOMPTARGET_KERNEL_TRACE` shows both builds are `SGN:6` (no-loop) at
+`teamsXthrds:(2X32)`, and **both carry a large scratch allocation** (27424 B with no flag, 76200 B at
+`-O0`), so the heap temporary is present either way.
+
+What distinguishes a bare invocation from an explicit `-O0` here is **not established**. Whatever it
+is, it decides whether the LTO fold of `omp_get_num_threads()` succeeds. Recorded as an open
+question rather than filled with another plausible story.
 
 The tell was available and ignored: a bug filed *against* these exact drops was not reproducing *on*
 those drops, and all of them predate both the issue (2026-05-19) and the fix (2026-06-25), so they

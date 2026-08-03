@@ -237,10 +237,16 @@ patch at whatever base the local tree is on and make the edit there.
 
 **Run the documented command verbatim before varying it (2026-08-03).** Testing whether `llvm#198621`
 still reproduces on gfx942/gfx950, I built the reproducer with `-O2`. Its documented command carries
-**no `-O` flag**. At `-O2` the device heap temporary for the array expression is optimised away,
-which removes step 3 of the cause chain, and the kernel passes. That produced a 9-run matrix of
-PASSes across three archs and a confident, entirely wrong conclusion that the reproducer had gone
-stale. Run verbatim, it fails `31 of 64` on gfx90a, gfx942 and gfx950 alike.
+**no `-O` flag**, and adding one makes the bug disappear. That produced a 9-run matrix of PASSes
+across three archs and a confident, entirely wrong conclusion that the reproducer had gone stale.
+Run verbatim, it fails `31 of 64` on gfx90a, gfx942 and gfx950 alike.
+
+Worth separating the fact from the story: an A/B shows *any* explicit `-O` hides it, `-O0` included,
+and `-O0` optimises nothing. So the first explanation offered — "`-O2` optimises the device heap
+temporary away" — was a guess that fit one data point. Both builds are `SGN:6` at
+`teamsXthrds:(2X32)` and both allocate large scratch, so the temporary is there either way. The real
+discriminator is unexplained. Having been wrong once by inventing a mechanism, the correction is to
+leave it marked unknown, not to invent a second one.
 
 A supporting measurement agreed with the wrong answer and so went unchallenged: `-fopenmp-is-target-device
 -S -emit-llvm` showed zero device `malloc`/`_FortranAAssign` calls at every `-O`. That is a
