@@ -87,9 +87,15 @@ With K=⌈N/32⌉ blocks, coverage is flat_ids `0..(K+30)`. Flat_ids `K+31..N−
 
 ### Source locations
 
+**These line references are to AMD's fork**, which is where the bug was first traced. Upstream the
+same decision is made as `noLoopMode` in
+`mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp:4708-4718`; there is no
+`canPromoteToNoLoop` symbol upstream. The `spmd_no_loop` exec mode is upstream
+(`mlir/include/mlir/Dialect/OpenMP/OpenMPEnums.td:324`), as is everything else below.
+
 | File | Line | Role |
 |------|------|------|
-| `mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp` | 2748 | `canPromoteToNoLoop` |
+| `mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp` | 2748 | `canPromoteToNoLoop` (AMD fork; upstream: `noLoopMode`) |
 | `mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp` | 3879 | Sets `noLoopMode=true` |
 | `llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp` | 6150 | Emits `one_iteration_per_thread=i8 1` |
 | `llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp` | 8154–8157 | Sets `MayUseNestedParallelism` |
@@ -109,6 +115,14 @@ if (OneIterationPerThread)
 
 Merged: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058) (2026-06-25).
 Upstream issue (still open): [llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621).
+
+**Who owns this upstream.** The no-loop path was added by @DominikAdamski in
+[#155818](https://github.com/llvm/llvm-project/pull/155818), approved by @Meinersbur, with @skatrak
+and @dhruvachak commenting. `openmp/device/src/Workshare.cpp` is maintained on the `offload` side:
+`offload/Maintainers.md` lists @jdoerfert and @jhuber6, and @jhuber6 is the most recent contributor
+to that file. Note that `openmp/Maintainers.md` (@mjklemm, @TerryLWilmarth) covers the **host**
+OpenMP library and is the wrong list for the device runtime. Local `git log` is useless for this in
+a shallow clone; use `gh api "repos/llvm/llvm-project/commits?path=<file>"` for real history.
 Original report: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601)
 
 **Answered 2026-08-03: the bug is still live, on every AMD arch available here, and
@@ -139,6 +153,37 @@ so it is two distinct compilers tested three times, not three. And all three dro
 ROCm 7.2.0 cannot build this reproducer at all: `ld.lld: error: undefined symbol: _FortranAAssign`,
 which is [#203890](https://github.com/llvm/llvm-project/issues/203890). On that toolchain the code
 does not miscompile, it fails to link.
+
+### Why this is an upstream defect that only AMD's toolchain can observe (2026-08-03)
+
+Every piece of the defective machinery is upstream:
+
+| piece | where |
+|---|---|
+| `spmd_no_loop` exec mode | `mlir/include/mlir/Dialect/OpenMP/OpenMPEnums.td:324` |
+| the `noLoopMode` decision | `mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp:4708` |
+| `NoLoop` -> `one_iteration_per_thread` | `llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp:6393` |
+| `num_threads` from `omp_get_num_threads()` | same file, ~6383 |
+| `DistributeFor` using it unguarded | `openmp/device/src/Workshare.cpp` |
+
+What is **downstream-only is the flag**: `-fopenmp-target-fast` does not exist upstream, where flang
+rejects it as an unknown argument. It is a convenience switch that turns on an upstream path.
+
+So why can only AFAR see the bug? Because reaching it needs an array-expression kernel, which needs
+`_FortranAAssign` on the device, and **upstream ships no device Fortran runtime**. An upstream build
+with `flang-rt` in `LLVM_ENABLE_RUNTIMES` and `amdgcn-amd-amdhsa` in `LLVM_RUNTIME_TARGETS` produces
+only `libompdevice.a` and `libomptarget-amdgpu.bc` under `lib/amdgcn-amd-amdhsa/`; the only
+`libflang_rt.runtime.a` is for `x86_64`. AFAR 23.2.1 ships a device one with **4 `_FortranAAssign`
+definitions**. Upstream the program fails to link; on AFAR it links and then miscomputes.
+
+Confirmed by building the reproducer with the local upstream flang at `d1d3891077f6`: it fails with
+`undefined symbol: _FortranAAssign` both with and without #209539 applied. #209539 fixes the
+`omp.private` copy-region assignment; the call here comes from the array-constructor assignment in
+the loop body, a different site.
+
+**The consequence worth acting on:** upstream is not protected by having fixed anything. It is
+protected by a missing runtime, and becomes exposed the moment device flang-rt is complete. That is
+the argument for porting ROCm#3058 now rather than treating it as hardening for a closed path.
 
 ### Measurement error worth not repeating
 
