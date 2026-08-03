@@ -111,13 +111,43 @@ Merged: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058)
 Upstream issue (still open): [llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621).
 Original report: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601)
 
-**Open question after `llvm#211287` landed (2026-08-03).** That PR's description says it "removes
-the trigger for" #198621, deliberately weaker than "fixes". Step 2 of this root cause is the same
-`MayUseNestedParallelism=1` that #211287 now refines to 0, so the path that reached the bad
-`NumThreads` should no longer be taken from flang workshare loops. Whether the wrong-stride defect
-in `DistributeFor` is *fixed* or merely *unreachable from here* has *not* been tested against
-post-merge `main`, and #198621 is still open. Re-run the reproducer before saying anything on the
-issue: if the defect is only unreachable, it stays open and the entry here should say so.
+**Answered 2026-08-03: `llvm#211287` makes the defect unreachable from here, it does not fix it.**
+#198621 correctly stays open.
+
+Determined by reading `origin/main` *after* #211287 landed (`4905109b00e6` confirmed an ancestor).
+Upstream `openmp/device/src/Workshare.cpp` still has the defective shape, unchanged:
+
+```cpp
+static void DistributeFor(IdentTy *Loc, ..., Ty NumIters, Ty NumThreads,
+                          Ty BlockChunk, Ty ThreadChunk,
+                          uint8_t OneIterationPerThread) {
+  ...
+  if (BlockChunk == 0)
+    BlockChunk = NumThreads;        // caller's NumThreads, no override
+  ...
+  if (OneIterationPerThread)
+    ASSERT(NumBlocks * NumThreads >= NumIters, "Broken assumption");
+```
+
+There is **no `mapping::getMaxTeamThreads()` override when `OneIterationPerThread` is set**, which
+is precisely what [ROCm#3058](https://github.com/ROCm/llvm-project/pull/3058) added downstream. The
+`__kmpc_distribute_for_static_loop*` entry points in the `OMP_LOOP_ENTRY` macro pass `num_threads`
+straight through, so nothing corrects it anywhere in the chain. Any caller that still reaches
+`DistributeFor` with a stale `NumThreads` of 1 gets the same skipped-iteration suffix.
+
+What #211287 changes is step 3/4 of the chain above, not step 5: refining
+`MayUseNestedParallelism` to 0 lets LTO fold `omp_get_num_threads()` into a hardware register read,
+so flang array-expression kernels stop supplying the bad value. The DeviceRTL weakness is untouched.
+
+Note for anyone testing this: in an assertions build the `ASSERT(NumBlocks * NumThreads >=
+NumIters)` above fires on the bad path, so `-DLLVM_ENABLE_ASSERTIONS=ON` turns the silent wrong
+answer into a diagnosable one. Release builds compile the assert out and simply skip iterations.
+
+**Still not measured:** that #211287 removes the trigger *in practice* is an inference from the
+cause chain, not a run of the reproducer against post-merge `main`. Confirming it needs a full
+flang + offload-runtime rebuild at current `main`, which has not been done. The structural half
+above, that the defect code is still present upstream, is verified from source and is what decides
+#198621's status.
 
 ---
 
