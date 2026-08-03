@@ -41,12 +41,39 @@ requested on both at filing (#211287: @abidh, @skatrak, @jdoerfert, @shiltian; #
 who reviewed on 07-22 and whose three points were taken the same day), so the eight days of silence
 is not a missing-reviewer problem; both were pinged after the rebase.
 
+**Both approved 2026-07-31, both green, both awaiting a committer.** @shiltian approved #211287
+about ten hours after the ping; @arsenm approved #211255. Neither can be self-merged — see the
+no-commit-access note in `../runtimes-fortran-modules-triple/README.md`, and note that #211137 sat
+approved for eleven days until a committer was actually asked. Land requests posted to both on
+2026-08-03.
+
+**A reviewer suggestion sat unapplied for three days on #211255 (2026-08-03).** @arsenm left a
+GitHub *suggestion* inline on 07-31 asking for the cheaper predicate first,
+`isCallableCC(Caller->getCallingConv()) && isColdCallSite(Call, CallerBFI)` rather than the other
+order, and had to ask again on 08-03: "Not applied, can you apply this and do whatever clang-format
+does with it." The miss was mine — his top-level "description is out of date" comment arrived two
+minutes after the suggestion, I answered that one, and never opened the inline thread. **Check the
+inline review threads, not just the conversation tab; `gh api repos/:owner/:repo/pulls/N/comments`
+lists them.**
+
+The change itself is sound and now applied (head `48cfa58b9622`): `isCallableCC` is `constexpr`
+while `isColdCallSite` runs BFI block-frequency queries, so the cheap check first short-circuits
+those away for kernels. Both predicates are pure, so the result is unchanged and only evaluation
+order differs. Inline suite after the swap: 291 passed, 1 expected failure, no failures.
+
+Two traps while applying it. Running `clang-format -i` on the whole file also reformatted an
+unrelated pre-existing line (`onMemAccess(){}`); reverted, since the request was to format the
+suggestion, not the file. And copying the edited file from a worktree based on current `main` into
+the local tree, which is eight days older, produced build errors at unrelated lines from API drift —
+apply the PR patch at the local base and edit on top instead.
+
 ## Tracking
 
 | Where | Link / ID |
 |-------|-----------|
 | llvm/llvm-project | [#211132](https://github.com/llvm/llvm-project/issues/211132) — open |
-| Fix PR | [#211287](https://github.com/llvm/llvm-project/pull/211287) — resolve the static-loop callback in `AAKernelInfo` |
+| Fix PR | [#211287](https://github.com/llvm/llvm-project/pull/211287) — resolve the static-loop callback in `AAKernelInfo`; **approved** @shiltian, green, awaiting a committer |
+| Related PR | [#211255](https://github.com/llvm/llvm-project/pull/211255) — cold-callsite threshold in non-callable functions; **approved** @arsenm, green, awaiting a committer |
 | Withdrawn | [#211136](https://github.com/llvm/llvm-project/pull/211136) — always-inline device-outlined regions (closed unmerged) |
 | Source | [MFC](https://github.com/MFlowCode/MFC) |
 

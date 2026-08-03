@@ -3,15 +3,19 @@
 Build-system (CMake configure-time) bug in `runtimes/cmake/config-Fortran.cmake`. Surfaces on any
 runtimes build configured for a GPU triple without flang-rt in its runtime list.
 
-**Status (2026-07-30): APPROVED, waiting on a committer to land it.** Reported:
+**Status (2026-08-03): FIXED UPSTREAM.** Reported:
 [llvm/llvm-project#211134](https://github.com/llvm/llvm-project/issues/211134).
 Fix: [llvm/llvm-project#211137](https://github.com/llvm/llvm-project/pull/211137), approved by
-@Meinersbur 2026-07-23, 79 checks green at `fb93dc363923`, `mergeable=MERGEABLE` / `CLEAN`.
+@Meinersbur 2026-07-23 and **merged by him 2026-08-03 10:47 UTC as
+[`1674a1c6da08`](https://github.com/llvm/llvm-project/commit/1674a1c6da083c2fdfe7e3539b8bf647989066b5)**
+(confirmed an ancestor of `origin/main`). Issue #211134 auto-closed as completed at the same moment.
 
-`gh pr merge` fails: **we have no commit access to llvm/llvm-project.** Authoring merged PRs does
-not imply it — #211138 was landed by @jhuber6 and #209645 by @agozillon, not by us. So an approved
-PR still needs a committer, normally the approving reviewer. Asked @Meinersbur to land this one on
-2026-07-30.
+**It sat approved for eleven days because nobody had been asked to land it.** `gh pr merge` fails:
+we have no commit access to llvm/llvm-project. Authoring merged PRs does not imply it — #211138 was
+landed by @jhuber6 and #209645 by @agozillon, not by us. A one-line request to @Meinersbur on
+2026-07-30 ("I do not have commit access, so could you land this when you get a chance?") got it
+merged. The lesson is cheap: when a PR goes approved and green, the next action is asking a
+committer, not waiting.
 
 @ldionne asked whether `runtimes/cmake/config-Fortran.cmake` can be moved out of `runtimes/cmake`,
 which is meant for CMake shared across runtimes. That is about the file's location, not this fix —
@@ -22,8 +26,8 @@ the file was placed there by @Meinersbur in
 
 | Where | Link / ID |
 |-------|-----------|
-| llvm/llvm-project | [#211134](https://github.com/llvm/llvm-project/issues/211134) — open |
-| Fix PR | [#211137](https://github.com/llvm/llvm-project/pull/211137) — probe the target triple; route CMake < 3.28 to `execute_process` |
+| llvm/llvm-project | [#211134](https://github.com/llvm/llvm-project/issues/211134) — **closed, completed** |
+| Fix PR | [#211137](https://github.com/llvm/llvm-project/pull/211137) — **merged** `1674a1c6da08`; probe the target triple, route CMake < 3.28 to `execute_process` |
 | Related | [openmp/module GPU-triple regex #211135](https://github.com/llvm/llvm-project/issues/211135) (`../openmp-module-gpu-triple/`) |
 | Source | [MFC](https://github.com/MFlowCode/MFC) |
 

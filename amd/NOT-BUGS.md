@@ -208,3 +208,29 @@ Verified figures for that work, per-suite so the total can be checked: `llvm/tes
 11676 + `llvm/test/CodeGen/AMDGPU` 4920 = 16596 discovered, 14668 passed, 39 expected failures, and
 one failure, `Transforms/ThinLTOBitcodeWriter/no-type-md.ll`, confirmed pre-existing by rebuilding
 from a clean tree with no patch applied.
+
+**Reviewer suggestions live in a different place from reviewer comments (2026-08-03).** On
+`llvm#211255` @arsenm left a GitHub *suggestion* inline on the diff at 11:44 and a top-level comment
+at 11:46. I answered the top-level one within the hour and never opened the inline thread, so the
+suggestion sat unapplied for three days until he asked again: "Not applied, can you apply this and
+do whatever clang-format does with it."
+
+Nothing about the PR looked wrong in the meantime. The conversation tab showed my reply as the last
+word, CI was green, and the PR was approved. `gh pr view` does not surface inline threads either.
+They come from a separate endpoint:
+
+```
+gh api repos/llvm/llvm-project/pulls/<N>/comments   # inline review threads
+gh api repos/llvm/llvm-project/issues/<N>/comments  # conversation tab
+gh api repos/llvm/llvm-project/pulls/<N>/reviews    # review bodies and states
+```
+
+Read all three before concluding a review is addressed, and re-check after replying, since a
+reviewer who leaves several notes at once will often mix the two kinds.
+
+Two smaller traps from applying it. `clang-format -i` on the whole file also reformatted an
+unrelated pre-existing line; when a reviewer asks for a suggestion to be formatted, format the
+suggestion and revert everything else, or the diff carries churn nobody asked for. And copying an
+edited file out of a worktree based on current `main` into a local tree eight days older produced
+build errors at unrelated line numbers, from API drift rather than from the edit — apply the PR
+patch at whatever base the local tree is on and make the edit there.
