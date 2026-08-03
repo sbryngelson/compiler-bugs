@@ -234,3 +234,34 @@ suggestion and revert everything else, or the diff carries churn nobody asked fo
 edited file out of a worktree based on current `main` into a local tree eight days older produced
 build errors at unrelated line numbers, from API drift rather than from the edit — apply the PR
 patch at whatever base the local tree is on and make the edit there.
+
+**Run the documented command verbatim before varying it (2026-08-03).** Testing whether `llvm#198621`
+still reproduces on gfx942/gfx950, I built the reproducer with `-O2`. Its documented command carries
+**no `-O` flag**. At `-O2` the device heap temporary for the array expression is optimised away,
+which removes step 3 of the cause chain, and the kernel passes. That produced a 9-run matrix of
+PASSes across three archs and a confident, entirely wrong conclusion that the reproducer had gone
+stale. Run verbatim, it fails `31 of 64` on gfx90a, gfx942 and gfx950 alike.
+
+A supporting measurement agreed with the wrong answer and so went unchallenged: `-fopenmp-is-target-device
+-S -emit-llvm` showed zero device `malloc`/`_FortranAAssign` calls at every `-O`. That is a
+device-only compile and does not reflect the two-pass offload build the driver actually performs.
+When a check confirms what you already believe, that is the moment to verify it independently.
+
+The contradiction was available the whole time and was rationalised away instead: the bug was filed
+*against* these exact AFAR drops, and all of them predate both the issue (2026-05-19) and the
+downstream fix (2026-06-25), so they must contain it. A bug not reproducing on the very build it was
+reported against means the invocation is wrong, not that the world changed.
+
+**Check what a toolchain directory actually contains (2026-08-03).** Two traps in the same session.
+`~/work/software/therock-afar-23.2.1-.../` ships **AFAR #23.2.0** — `amdflang --version` reports
+`#23.2.0 04/18/26`, git `35849413f758`, byte-identical version output to the 23.2.0 drop. Testing
+"three drops" was two compilers, one of them twice. `BUILD_NOTES.md` in that directory already said
+so. And `find -name "*.bc" | grep gfx` reported the drops as gfx90a-only, because the device
+libraries are named `oclc_isa_version_942.bc` with no `gfx` prefix; they in fact cover 90a, 942 and
+950. An absence reported by a search is a property of the search until proven otherwise.
+
+**`ROCM_PATH` silently redirects device libraries (2026-08-03).** With `ROCM_PATH=/opt/rocm-7.2.0`
+set in the environment, every AFAR build resolved its device bitcode from the system ROCm rather
+than the drop's own `lib/llvm/amdgcn/bitcode`, invisibly. Nothing warns. Pass
+`--rocm-path=<drop>/lib/llvm` and confirm the expected `oclc_isa_version_*.bc` appears in `-v`
+output before trusting a cross-toolchain comparison.

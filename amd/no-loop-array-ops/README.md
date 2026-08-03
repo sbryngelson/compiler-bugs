@@ -111,10 +111,49 @@ Merged: [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058)
 Upstream issue (still open): [llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621).
 Original report: [ROCm/llvm-project#2601](https://github.com/ROCm/llvm-project/issues/2601)
 
-**Answered 2026-08-03: `llvm#211287` makes the defect unreachable from here, it does not fix it.**
-#198621 correctly stays open.
+**Answered 2026-08-03: the bug is still live, on every AMD arch available here, and
+`llvm#211287` does not fix it.** #198621 correctly stays open.
 
-Determined by reading `origin/main` *after* #211287 landed (`4905109b00e6` confirmed an ancestor).
+### Reproduced on gfx90a, gfx942 and gfx950 (2026-08-03)
+
+Documented flags, `minimal_array_constructor.f90`, N=64, one node per arch:
+
+| toolchain | gfx90a (MI250X) | gfx942 (MI300X) | gfx950 (MI355X) |
+|---|---|---|---|
+| AFAR 23.1.0 | FAIL: 31 of 64 | FAIL: 31 of 64 | FAIL: 31 of 64 |
+| AFAR 23.2.0 | FAIL: 31 of 64 | FAIL: 31 of 64 | FAIL: 31 of 64 |
+| AFAR dir `23.2.1` | FAIL: 31 of 64 | FAIL: 31 of 64 | FAIL: 31 of 64 |
+
+**The miscount is identical on all three**, not merely "still fails". The `N_wrong` formula does not
+shift with the wave/CU geometry of MI300X or MI355X, because the failure is set by the software
+stride collapsing to 1 rather than by anything hardware-specific. So this is a DeviceRTL logic
+defect, and it is live on AMD's newest silicon with the current shipping compilers — not a legacy
+gfx90a curiosity. That is a much stronger argument for porting
+[ROCm#3058](https://github.com/ROCm/llvm-project/pull/3058) upstream than "defense in depth".
+
+Two caveats on that table. The directory named `therock-afar-23.2.1-...` ships **AFAR #23.2.0**
+(`amdflang --version` reports `#23.2.0 04/18/26`, git `35849413f758`, identical to the 23.2.0 drop),
+so it is two distinct compilers tested three times, not three. And all three drops predate the
+2026-06-25 downstream fix, so this says nothing about current `amd-staging`, which should pass.
+
+ROCm 7.2.0 cannot build this reproducer at all: `ld.lld: error: undefined symbol: _FortranAAssign`,
+which is [#203890](https://github.com/llvm/llvm-project/issues/203890). On that toolchain the code
+does not miscompile, it fails to link.
+
+### Measurement error worth not repeating
+
+An earlier pass at this concluded the reproducer had gone stale and no longer triggered on any arch.
+That was wrong, and the cause was adding **`-O2`**. The command documented above carries no `-O`
+flag; at `-O2` the device heap temporary for the array expression is optimised away, which removes
+step 3 of the cause chain, so the kernel passes. Every conclusion drawn from that run was void.
+
+The tell was available and ignored: a bug filed *against* these exact drops was not reproducing *on*
+those drops, and all of them predate both the issue (2026-05-19) and the fix (2026-06-25), so they
+must contain it. That contradiction should have pointed at the invocation immediately instead of at
+a "the reproducer went stale" theory. Run the documented command verbatim before varying it.
+
+The upstream half was determined by reading `origin/main` after #211287 landed, re-checked at
+`e7713ee70b87`. **Both ends of the defect are intact**, not just the DeviceRTL.
 Upstream `openmp/device/src/Workshare.cpp` still has the defective shape, unchanged:
 
 ```cpp
@@ -143,11 +182,25 @@ Note for anyone testing this: in an assertions build the `ASSERT(NumBlocks * Num
 NumIters)` above fires on the bad path, so `-DLLVM_ENABLE_ASSERTIONS=ON` turns the silent wrong
 answer into a diagnosable one. Release builds compile the assert out and simply skip iterations.
 
-**Still not measured:** that #211287 removes the trigger *in practice* is an inference from the
-cause chain, not a run of the reproducer against post-merge `main`. Confirming it needs a full
-flang + offload-runtime rebuild at current `main`, which has not been done. The structural half
-above, that the defect code is still present upstream, is verified from source and is what decides
-#198621's status.
+The caller side is unchanged too. `llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp` still supplies
+`num_threads` from a runtime call:
+
+```cpp
+FunctionCallee RTLNumThreads = OMPBuilder->getOrCreateRuntimeFunction(
+    M, omp::RuntimeFunction::OMPRTL_omp_get_num_threads);
+Value *NumThreads = OMPBuilder->createRuntimeFunctionCall(RTLNumThreads, {});
+RealArgs.push_back(
+    Builder.CreateZExtOrTrunc(NumThreads, TripCountTy, "num.threads.cast"));
+```
+
+so a hoistable call feeds the stride and nothing downstream sanity-checks it.
+
+**What #211287 does and does not do.** It refines `MayUseNestedParallelism` to 0, which lets LTO fold
+`omp_get_num_threads()` into a register read for the kernels it applies to. It does not touch the
+DeviceRTL. Whether that closes every path to the bad value upstream has *not* been measured here —
+the runs above are AFAR drops, all of which predate it. What is measured is that the bug is live on
+gfx90a/gfx942/gfx950 with the shipping AFAR compilers, and what is read from source is that both
+halves of the defect remain in `main`.
 
 ---
 
