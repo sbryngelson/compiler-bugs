@@ -28,7 +28,10 @@ added a TTI hook and was rejected in review.
 [#211287](https://github.com/llvm/llvm-project/pull/211287) — *fixes* #211132; `AAKernelInfo` resolves
 the loop-body callback of the `__kmpc_*_static_loop_*` entries (a direct function operand) instead of
 treating it as opaque. Also removes the trigger for
-[#198621](https://github.com/llvm/llvm-project/issues/198621).
+[#198621](https://github.com/llvm/llvm-project/issues/198621) — **but does not fix it**, and #198621
+is still open. The DeviceRTL defect behind it is intact upstream, and it still reproduces on
+gfx90a/gfx942/gfx950 with the shipping AFAR compilers, which predate #211287. See
+`../no-loop-array-ops/`.
 
 Premerge on #211287 has only ever failed on unrelated tests, and never on the same one twice. One
 run failed `clang-tidy/infrastructure/update-checks-list.test`, which fails on unmodified `main` and
@@ -69,10 +72,17 @@ minutes after the suggestion, I answered that one, and never opened the inline t
 inline review threads, not just the conversation tab; `gh api repos/:owner/:repo/pulls/N/comments`
 lists them.**
 
-The change itself is sound and now applied (head `48cfa58b9622`): `isCallableCC` is `constexpr`
-while `isColdCallSite` runs BFI block-frequency queries, so the cheap check first short-circuits
-those away for kernels. Both predicates are pure, so the result is unchanged and only evaluation
-order differs. Inline suite after the swap: 291 passed, 1 expected failure, no failures.
+The change itself is sound and applied: `isCallableCC` is `constexpr` while `isColdCallSite` runs
+BFI block-frequency queries, so the cheap check first short-circuits those away for kernels. Both
+predicates are pure, so the result is unchanged and only evaluation order differs. Inline suite
+after the swap: 291 passed, 1 expected failure, no failures.
+
+Head is now `143c33a87c5a`, a merge of `main` into the branch made 2026-08-03 to clear a CI failure.
+The net diff is unchanged (`InlineCost.cpp +7/-1`, the test `+59/-0`) and CI is green, 11 pass. A
+merge commit is harmless here because llvm-project squash-merges, so it never reaches `main`; the
+earlier rebases were for a different reason, namely a base that had never landed. That CI failure
+was `lldb-api :: tools/lldb-dap/attach/TestDAP_attach.py` timing out at exactly 1200.01s against a
+1200s limit, the fourth distinct lldb test to fail across these two PRs, none of which touch lldb.
 
 Two traps while applying it. Running `clang-format -i` on the whole file also reformatted an
 unrelated pre-existing line (`onMemAccess(){}`); reverted, since the request was to format the
