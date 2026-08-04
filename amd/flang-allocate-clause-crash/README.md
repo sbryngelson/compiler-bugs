@@ -7,8 +7,8 @@ version of the report was wrong.
 | | |
 |---|---|
 | Issue | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) — root cause posted [as a comment](https://github.com/llvm/llvm-project/issues/211430#issuecomment-5181030223) |
-| Crash fix PR | [llvm#214012](https://github.com/llvm/llvm-project/pull/214012) — `[flang][OpenMP] Diagnose failed construct decomposition instead of falling through`. One file, +27/-1. **Linux and AArch64 green.** Stops the segfault for *any* directive/clause pair that decomposes empty |
-| Diagnostic PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — `Gate the OpenMP allocate clause at version 5.0`. **Approved by @kparzysz 2026-08-04, but CI red on all four platforms (85 clang tests)**; he approved after CI failed and did not mention it. Awaiting his call on whether to update the clang tests here or drop it |
+| Crash fix PR | [llvm#214012](https://github.com/llvm/llvm-project/pull/214012) — `Diagnose failed construct decomposition instead of falling through`. **MERGED 2026-08-04.** Stops the segfault for *any* directive/clause pair that decomposes empty |
+| Diagnostic PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — reworked 2026-08-04 to gate in flang semantics instead of `OMP.td`, after the table version broke 83 clang tests. Open |
 
 The PR deliberately does **not** carry a `Fixes` keyword and the issue comment says explicitly not
 to close #211430 on it: the gate removes reachability, the uninitialized read is untouched. See
@@ -266,3 +266,44 @@ run above. An earlier build of this same fix was silently killed at 530/586 by a
 and a later one failed because the cluster updated its libstdc++ headers mid-session
 (`c++config.h` 128855 -> 129531 bytes), invalidating all ten precompiled headers; deleting the
 `.pch` files fixed it.
+
+
+## Why the gate moved out of OMP.td (2026-08-04)
+
+`OMP.td` is shared with clang: `ParseOpenMP.cpp` calls the same
+`isAllowedClauseForDirective(D, C, getLangOpts().OpenMP)`. Gating `allocate` there broke **83**
+`Clang :: OpenMP` tests, measured on a clang actually rebuilt from the gated table:
+
+| suite | with the OMP.td gate |
+|---|---|
+| `clang/test/OpenMP` | 1594 tests, **83 failed** |
+| `flang/test` | 4808 tests, 9 failed |
+
+Of the 83, **72 are `_messages` sema tests** and only 10 `ast_print`, 1 codegen. The sema ones are
+the blocker: each runs the *same source* at 4.5 and at 5.0+, so a bare `expected-error` for the
+version rejection would be wrong on the 5.0+ runs. Fixing them properly means converting them to
+prefixed `-verify=omp45,omp50` expectations. Only 11 of 83 already have a dedicated pre-5.0
+check-prefix. 167 lines contain `allocate(`, but just 16 CHECK lines expect it, so the work is the
+verify conversion, not CHECK churn.
+
+Gating per language is not expressible today: `languages` is a field on `Directive`
+(`DirectiveBase.td:263`), not on `Clause` or `VersionedClause`, and
+`isAllowedClauseForDirective` takes no language argument.
+
+So the restriction now lives in flang's `CheckAllowedClause`
+(`flang/lib/Semantics/check-omp-structure.cpp`) as a small clause-minimum-version table. clang is
+untouched by construction. Same diagnostic, same nine flang test updates, and
+`clang/test/OpenMP` is back to 1594/0.
+
+**Three stale-binary near-misses in this round**, all caught by checking mtimes before trusting a
+result:
+
+* The original 1594/0 that cleared the OMP.td version ran against a `clang-24` twelve days old,
+  because only flang targets had been rebuilt.
+* A `check-flang` run showed 0 failures because the nine test files in the source tree still
+  carried the `-fopenmp-version=` fixes from the earlier experiment. Reverting them showed the
+  real 9.
+* Copying the edited `check-omp-structure.cpp` from a worktree on current `main` into the local
+  tree (11 days older) failed to build with `no type named 'ClauseSet' in namespace 'llvm::omp'` --
+  the same worktree-drift trap already recorded in `../openmp-outlined-not-inlined/README.md`.
+  Apply the hunk at the local base instead of copying the file.
