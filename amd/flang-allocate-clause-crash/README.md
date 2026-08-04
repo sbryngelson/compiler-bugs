@@ -7,7 +7,8 @@ version of the report was wrong.
 | | |
 |---|---|
 | Issue | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) — root cause posted [as a comment](https://github.com/llvm/llvm-project/issues/211430#issuecomment-5181030223) |
-| Fix PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — `[flang][OpenMP] Gate the allocate clause at OpenMP 5.0`, opened 2026-08-04 on `e7713ee70b87`. **CI red on all four platforms, 85 clang tests; approach is wrong, see below** |
+| Crash fix PR | [llvm#214012](https://github.com/llvm/llvm-project/pull/214012) — `[flang][OpenMP] Diagnose failed construct decomposition instead of falling through`. One file, +27/-1. **Linux and AArch64 green.** Stops the segfault for *any* directive/clause pair that decomposes empty |
+| Diagnostic PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — `Gate the OpenMP allocate clause at version 5.0`. **Approved by @kparzysz 2026-08-04, but CI red on all four platforms (85 clang tests)**; he approved after CI failed and did not mention it. Awaiting his call on whether to update the clang tests here or drop it |
 
 The PR deliberately does **not** carry a `Fixes` keyword and the issue comment says explicitly not
 to close #211430 on it: the gate removes reachability, the uninitialized read is untouched. See
@@ -213,3 +214,55 @@ The assertions-build crash hunt (`/work1/.../crashhunt/hunt.sh`), which swept ge
 probes across `-fopenmp-version` 31/45/50/52/60 and turned up exactly two distinct assertions: this
 one (6 hits) and `lastiter in CanonicalLoopInfo is nullptr` (18 hits, see
 `../flang-linear-target-crash/`).
+
+## The crash fix that actually shipped (llvm#214012, 2026-08-04)
+
+Rather than gate the clause, harden the consumer. `buildConstructQueue` now emits a located
+diagnostic and exits instead of falling through an empty decomposition:
+
+```cpp
+if (decompose.output.empty()) {
+  // ...resolve `source` to a FileLineColLoc via semaCtx.allCookedSources()...
+  fir::emitFatalError(loc,
+      llvm::Twine("OpenMP construct decomposition failed: a clause on '") +
+          llvm::omp::getOpenMPDirectiveName(compound, llvm::omp::FallbackVersion) +
+          "' cannot be applied to any of its leaf constructs",
+      /*genCrashDiag=*/false);
+}
+```
+
+`fir::emitFatalError` is the idiom for this in `flang/lib/Lower` — there is no `_err_en_US`
+precedent there, since lowering runs after semantics has finished reporting. `genCrashDiag=false`
+means it exits non-zero with the message and no backtrace, so it does not present as a compiler
+crash.
+
+The first version used `modOp.getLoc()` and printed `loc(".../repro.f90":0:0)`, which is useless.
+Resolving the directive's own `parser::CharBlock` through
+`semaCtx.allCookedSources().GetProvenanceRange()` and `allSources().GetSourcePosition()` gives the
+real position — the same path `AbstractConverter::genLocation` takes, but reachable without a
+converter, which `buildConstructQueue` does not have.
+
+Result on `repro.f90` at the default 3.1, 40 trials:
+
+| | before | after |
+|---|---|---|
+| segfaults | 25/40 | **0/40** |
+| clean exit-1 with diagnostic | 0/40 | **40/40** |
+
+```
+error: loc("repro.f90":6:11): OpenMP construct decomposition failed: a clause on
+       'target teams distribute parallel do' cannot be applied to any of its leaf constructs
+```
+
+`check-flang` 4808/0 locally; premerge Linux and AArch64 green.
+
+This covers every directive/clause pair that decomposes empty, not just `allocate`, so #211430
+stops segfaulting regardless of how the gating question resolves. What #213980 would add on top is
+the *correct* diagnostic naming the clause and version, rather than this generic one.
+
+**Verification note:** the binary was confirmed newer than the patched source (12:11:16 vs
+11:13:52) before any of these numbers were taken — the check whose absence invalidated the clang
+run above. An earlier build of this same fix was silently killed at 530/586 by a session restart,
+and a later one failed because the cluster updated its libstdc++ headers mid-session
+(`c++config.h` 128855 -> 129531 bytes), invalidating all ten precompiled headers; deleting the
+`.pch` files fixed it.
