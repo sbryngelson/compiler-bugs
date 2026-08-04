@@ -7,7 +7,7 @@ version of the report was wrong.
 | | |
 |---|---|
 | Issue | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) — root cause posted [as a comment](https://github.com/llvm/llvm-project/issues/211430#issuecomment-5181030223) |
-| Fix PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — `[flang][OpenMP] Gate the allocate clause at OpenMP 5.0`, opened 2026-08-04, based on `e7713ee70b87` |
+| Fix PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — `[flang][OpenMP] Gate the allocate clause at OpenMP 5.0`, opened 2026-08-04 on `e7713ee70b87`. **CI red on all four platforms, 85 clang tests; approach is wrong, see below** |
 
 The PR deliberately does **not** carry a `Fixes` keyword and the issue comment says explicitly not
 to close #211430 on it: the gate removes reachability, the uninitialized read is untouched. See
@@ -118,10 +118,49 @@ Clean after the fix, on the patched build:
 |---|---|---|
 | `flang/test` (full `check-flang`) | 4808 | **0** |
 | `mlir/test/Dialect/OpenMP` + `Target/LLVMIR` + `llvm/test/Frontend` | 425 | **0** |
-| `clang/test/OpenMP` | 1594 | **0** |
+| ~~`clang/test/OpenMP`~~ | ~~1594~~ | ~~0~~ **INVALID, see below** |
 
-clang is unaffected because it version-checks `allocate` in its own semantic analysis rather than
-relying on the table, but it shares `OMP.td`, so it was worth confirming.
+### The clang result was bogus and the approach is wrong (2026-08-04)
+
+**Premerge CI failed on all four platforms: 85 `Clang :: OpenMP/*` tests.** The local
+`clang/test/OpenMP` 1594/0 above is worthless — `bin/clang-24` in that build tree is dated
+2026-07-23, twelve days before the patch. Only flang targets were rebuilt, so clang was never
+relinked and the suite ran against a binary compiled from the *unpatched* `OMP.td`. A green result
+from a stale binary, taken as evidence.
+
+Worse, I then wrote a mechanism to explain it — "clang version-checks `allocate` in its own
+semantic analysis rather than relying on the table" — which is false. `ParseOpenMP.cpp:3229` calls
+the same table:
+
+```cpp
+!isAllowedClauseForDirective(DKind, CKind, getLangOpts().OpenMP)
+```
+
+so clang is fully affected. **Check the binary's mtime before trusting a suite that passed.**
+
+Substantively, this means the change is not a flang metadata fix at all. clang has accepted
+`allocate` below 5.0 for years and its tests encode that deliberately — e.g.
+`clang/test/OpenMP/distribute_simd_ast_print.cpp` runs at `-fopenmp-version=45` with CHECK lines
+asserting the clause round-trips. 269 clang OpenMP tests use `allocate(`. Gating the clause is
+spec-correct but is a cross-frontend behaviour change needing clang OpenMP owners' consent, not a
+drive-by.
+
+(Two `Flang ::` tests also failed in CI, `Fir/dispatch.f90` and `Lower/array.f90`. Neither is an
+OpenMP test — `Fir/dispatch.f90` does not contain the string at all — and neither is touched by the
+patch, so they are unrelated to it.)
+
+**The better fix for #211430 is defect 2, not defect 1.** Making `buildConstructQueue` diagnose and
+bail instead of falling through the failed decomposition fixes the crash for *every* clause and
+directive combination that decomposes empty, needs no version-table change, and does not perturb
+clang:
+
+```cpp
+ConstructDecomposition decompose(modOp, semaCtx, eval, compound, clauses);
+assert(!decompose.output.empty() && "Construct decomposition failed");   // <- release builds fall through
+```
+
+The version gate remains defensible as a separate cleanup, but on its own merits and with the clang
+test churn owned up front — not as a crash fix.
 
 **Those three numbers were measured at `d1d3891` (2026-07-23), not at the PR's base.** `OMP.td`
 drifted upstream in between (16/5 lines, the unrelated `default`/`update` clause split); the nine
