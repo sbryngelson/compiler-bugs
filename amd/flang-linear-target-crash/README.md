@@ -1,6 +1,13 @@
 # flang/OpenMP: segfault in `OpenMPIRBuilder::createParallel` for `linear()` on a device target construct
 
-**Status: OPEN.** Reported: [llvm/llvm-project#211429](https://github.com/llvm/llvm-project/issues/211429).
+**Status: OPEN, root-caused 2026-08-04, no patch.** Reported:
+[llvm/llvm-project#211429](https://github.com/llvm/llvm-project/issues/211429); root cause posted
+[as a comment](https://github.com/llvm/llvm-project/issues/211429#issuecomment-5181030424).
+
+No fix is proposed because the choice is a design call for whoever owns that code: either give
+`applyWorkshareLoopTarget` a lastiter slot, or reject `linear` on a device workshare loop until it
+has one. Unrelated to [#213980](https://github.com/llvm/llvm-project/pull/213980) — this one is
+version-independent.
 
 ```
 flang -fc1 -emit-llvm -fopenmp -fopenmp-is-target-device \

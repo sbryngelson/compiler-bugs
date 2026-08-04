@@ -1,10 +1,17 @@
 # flang/OpenMP: segfault lowering the `allocate` clause on a worksharing loop
 
-**Status: OPEN, root-caused 2026-08-04. Not an offload bug** — it reproduces on ordinary host
-compilation with no `target` construct anywhere; the offload framing in the first version of the
-report was wrong.
+**Status: OPEN, root-caused and patch posted 2026-08-04. Not an offload bug** — it reproduces on
+ordinary host compilation with no `target` construct anywhere; the offload framing in the first
+version of the report was wrong.
 
-Reported: [llvm/llvm-project#211430](https://github.com/llvm/llvm-project/issues/211430).
+| | |
+|---|---|
+| Issue | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) — root cause posted [as a comment](https://github.com/llvm/llvm-project/issues/211430#issuecomment-5181030223) |
+| Fix PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — `[flang][OpenMP] Gate the allocate clause at OpenMP 5.0`, opened 2026-08-04, based on `e7713ee70b87` |
+
+The PR deliberately does **not** carry a `Fixes` keyword and the issue comment says explicitly not
+to close #211430 on it: the gate removes reachability, the uninitialized read is untouched. See
+"Fix" below.
 
 ```
 flang -fc1 -emit-hlfir -fopenmp -fopenmp-is-target-device \
@@ -115,6 +122,21 @@ Clean after the fix, on the patched build:
 
 clang is unaffected because it version-checks `allocate` in its own semantic analysis rather than
 relying on the table, but it shares `OMP.td`, so it was worth confirming.
+
+**Those three numbers were measured at `d1d3891` (2026-07-23), not at the PR's base.** `OMP.td`
+drifted upstream in between (16/5 lines, the unrelated `default`/`update` clause split); the nine
+test files did not. Re-derived on `e7713ee70b87` the transformation is identical — 58 ungated and 4
+gated before, 0/61/1 after — and `llvm-tblgen --gen-directive-impl` on the two versions of the file
+differs by exactly 58 hunks, each `1 <= Version` becoming `50 <= Version`, which is the whole
+intended effect and nothing else. Behavioural re-verification at the new base is premerge CI's job;
+as of 2026-08-04 the four Build-and-Test checks are still pending, `code_formatter`,
+`Check LLVM_ABI annotations` and the mergeability checks are green.
+
+A local rebuild at the new base was attempted and abandoned: the configure omitted `-G Ninja` so
+CMake emitted Makefiles, `ninja` then died on a missing `build.ninja`, and the wrapper still
+reported success because the captured exit status was a trailing `echo`'s. Premerge CI covers
+Linux/AArch64/Windows/macOS anyway, which is strictly more than the single local config, so it is
+the better check rather than a fallback.
 
 **This fixes the reachability, not the memory error.** Defect 2 is still latent: any other clause
 or directive combination that makes `ConstructDecomposition` return empty will hit the same
