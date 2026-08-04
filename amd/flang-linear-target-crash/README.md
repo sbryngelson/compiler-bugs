@@ -47,3 +47,58 @@ regression, not bisected.
 
 Also independent of the module wrapper — a bare subroutine crashes 10/10 — and reproduced on a
 pristine build of `02c51adb8ff2`.
+
+
+## Root cause (2026-08-04)
+
+An assertions build names it immediately. The stack above was a release-build symptom; the actual
+failure is a null `LastIter`:
+
+```
+mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp:4681:
+  Assertion `loopInfo->getLastIter() && "`lastiter` in CanonicalLoopInfo is nullptr"' failed.
+```
+
+at the linear finalization site:
+
+```cpp
+// Emit finalization and in-place rewrites for linear vars.
+if (!wsloopOp.getLinearVars().empty()) {
+  llvm::OpenMPIRBuilder::InsertPointTy oldIP = builder.saveIP();
+  assert(loopInfo->getLastIter() && "`lastiter` in CanonicalLoopInfo is nullptr");
+```
+
+`linear` finalization needs `lastiter` to know which iteration's value to copy out. Only the three
+static-init paths allocate that slot — `OMPIRBuilder.cpp:5925`, `:6098`, `:6642`, each a
+`CreateAlloca(..., "p.lastiter")` followed by `CLI->setLastIter(PLastIter)`. But on device,
+`applyWorkshareLoop` never reaches them:
+
+```cpp
+// OMPIRBuilder.cpp:6497
+if (Config.isTargetDevice())
+  return applyWorkshareLoopTarget(DL, CLI, AllocaIP, LoopType, NoLoop);
+```
+
+and `applyWorkshareLoopTarget` contains no `setLastIter` at all — it hands the loop to
+`__kmpc_*_static_loop_*` wholesale, so there is no lastiter slot to set. `LastIter` stays null and
+the MLIR translation asserts on it.
+
+That accounts for the whole scope table exactly: device-only (the early return is
+`isTargetDevice()`-gated), `simd`-independent, module-independent, and independent of whether the
+`linear` variable is assigned — none of those touch the dispatch.
+
+**Version-independent**, unlike the `allocate` crash in `../flang-allocate-clause-crash/`. Same
+assertion, `rc=134`, at every version:
+
+| `-fopenmp-version` | 31 | 45 | 50 | 52 | 60 |
+|---|---|---|---|---|---|
+| result | assert | assert | assert | assert | assert |
+
+So the `OMP.td` version-gate fix does not touch this one; `linear` is legal on these directives and
+correctly gated already. A fix has to either give `applyWorkshareLoopTarget` a lastiter slot or
+reject/diagnose `linear` on a device workshare loop until it does.
+
+## Found by
+
+18 hits in the assertions-build crash hunt (`/work1/.../crashhunt/hunt.sh`) — the larger of the two
+distinct assertions it surfaced.

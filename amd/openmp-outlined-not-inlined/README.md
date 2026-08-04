@@ -14,7 +14,17 @@ fix for the defect described here: the 212 -> 94 VGPRs, 48 B -> 0 scratch, 2 -> 
 
 [#211255](https://github.com/llvm/llvm-project/pull/211255) is still open, approved by @arsenm and
 awaiting a committer. It is an independent correctness fix rather than a fix for #211132, so this
-entry is complete without it.
+entry is complete without it. As of 2026-08-04 all 12 checks are green and the 08-03 land request
+has had no reply; nothing is actionable on it but a re-ping.
+
+The two directions have now both landed, in opposite places:
+[#211287](https://github.com/llvm/llvm-project/pull/211287) upstream (resolve the callback, so the
+kernel gets `MayUseNestedParallelism=0` and the inliner's last-call bonus applies) and
+[ROCm#3485](https://github.com/ROCm/llvm-project/pull/3485) downstream (stop forcing `alwaysinline`,
+which was AMD's older workaround for the same symptom). They are consistent: #211287 removes the
+reason `alwaysinline` was needed, and #3485 removes the cost it imposed. @skatrak's 07-22 heads-up
+on #3485 — that someone was "proposing to do the opposite change upstream", meaning the withdrawn
+#211136 — is resolved by #211287 having been the accepted form.
 
 Original status, kept for the history: the `alwaysinline` fix
 [llvm/llvm-project#211136](https://github.com/llvm/llvm-project/pull/211136)
@@ -198,7 +208,8 @@ does for its parallel-region operand. Result on gfx90a: 212 / 48 B / 2 → **94 
 196/456/2 → 110/392/4.
 
 The withdrawn `alwaysinline` approach ([#211136](https://github.com/llvm/llvm-project/pull/211136)) is
-what [ROCm/llvm-project#3485](https://github.com/ROCm/llvm-project/pull/3485) is backing out downstream:
+what [ROCm/llvm-project#3485](https://github.com/ROCm/llvm-project/pull/3485) backed out downstream —
+**merged 2026-08-04 14:22 UTC**, so the next AFAR drop will carry it:
 forcing the body inline grows the kernel past the AMDGPU inliner's basic-block budget, so
 `__kmpc_target_init` stops being specialized and SPMD kernels inherit a module-wide worst-case
 `amdgpu.max_num_vgpr`. Restricting it to the workshare-loop outline and leaving the parallel outline
