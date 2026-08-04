@@ -84,14 +84,37 @@ error: ALLOCATE clause is not allowed on TARGET TEAMS DISTRIBUTE PARALLEL DO dir
 ```
 
 Verified on the assertions build: diagnostic at v31/v45, and 0/20 at v50/v52/v60 where it still
-compiles unchanged. `check-flang` regression run in progress; the expected fallout is eight lit
-tests that exercise `allocate` without pinning a version and will need `-fopenmp-version=50` on
-their RUN lines:
+compiles unchanged.
 
-```
-flang/test/Semantics/OpenMP/allocate_do1.f90
-flang/test/Lower/OpenMP/{parallel-sections,distribute,parallel,taskloop,single,sections,task}.f90
-```
+### Regressions (2026-08-04, complete)
+
+Nine lit tests, not the eight predicted. All nine exercise `allocate` through bare
+`%openmp_flags`, which is `-fopenmp` with no version, so they ran at the default 3.1 and silently
+depended on the missing gate. Fix is a RUN-line flag in each:
+
+| test | flag added |
+|---|---|
+| `flang/test/Lower/OpenMP/{distribute,parallel,parallel-sections,sections,single,task,taskloop}.f90` | `-fopenmp-version=50` |
+| `flang/test/Semantics/OpenMP/{allocators02,allocators03}.f90` | `-fopenmp-version=52` |
+
+The two `allocators` tests were not predicted and are the more interesting pair: both carry an
+`! OpenMP Version 5.2` header comment but never passed the flag, so they were asserting 5.2
+semantics against a 3.1 invocation. They get 52 rather than 50 to match what they document.
+`allocate_do1.f90` was predicted to fail and does not — it already pins a version.
+
+Four of the seven `Lower` tests have two RUN lines (`%flang_fc1` and `bbc`); both need the flag,
+which is easy to miss since only the first failure is reported.
+
+Clean after the fix, on the patched build:
+
+| suite | tests | failed |
+|---|---|---|
+| `flang/test` (full `check-flang`) | 4808 | **0** |
+| `mlir/test/Dialect/OpenMP` + `Target/LLVMIR` + `llvm/test/Frontend` | 425 | **0** |
+| `clang/test/OpenMP` | 1594 | **0** |
+
+clang is unaffected because it version-checks `allocate` in its own semantic analysis rather than
+relying on the table, but it shares `OMP.td`, so it was worth confirming.
 
 **This fixes the reachability, not the memory error.** Defect 2 is still latent: any other clause
 or directive combination that makes `ConstructDecomposition` return empty will hit the same
