@@ -6,7 +6,7 @@ Nothing here has been filed. Status is stated at the top of each.
 | # | finding | severity | filed? |
 |---|---|---|---|
 | 01 | flang ignores the `schedule` clause in device offload | conformance | no |
-| 02 | flang: `ordered` not honoured on device, **wrong results** | correctness | no |
+| 02 | flang: `ordered` not honoured on device, **wrong results** | correctness | **filed: llvm#214257** |
 | 03 | AFAR 23.2.1 cannot compile user-defined reductions (version lag, not upstream) | note | n/a |
 | 04 | flang silently drops a `tile` nested in `unroll` | conformance | **superseded** -- TODO diagnostic folded into llvm#214115 |
 
