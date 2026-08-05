@@ -1,0 +1,109 @@
+From d6800680f30d333a59c84be598ecc0f569c1eb75 Mon Sep 17 00:00:00 2001
+From: Spencer Bryngelson <sbryngelson@gmail.com>
+Date: Tue, 4 Aug 2026 16:02:09 -0500
+Subject: [PATCH] Use the actual block size for NumThreads in the SPMD no-loop
+ distribute path.
+
+Assisted-by: Claude
+---
+ .../distribute_for_no_loop_num_threads.c      | 71 +++++++++++++++++++
+ openmp/device/src/Workshare.cpp               |  5 ++
+ 2 files changed, 76 insertions(+)
+ create mode 100644 offload/test/offloading/distribute_for_no_loop_num_threads.c
+
+diff --git a/offload/test/offloading/distribute_for_no_loop_num_threads.c b/offload/test/offloading/distribute_for_no_loop_num_threads.c
+new file mode 100644
+index 000000000000..4ad4012efb81
+--- /dev/null
++++ b/offload/test/offloading/distribute_for_no_loop_num_threads.c
+@@ -0,0 +1,71 @@
++// SPMD no-loop distribute: the index is BId * NumThreads + TId, so a NumThreads
++// larger than the real block size drops iterations.
++//
++// The entry is called directly because no C/C++ construct reaches it: clang
++// emits __kmpc_for_static_init_4, only flang emits this one.
++//
++// RUN: %libomptarget-compile-run-and-check-generic
++// REQUIRES: gpu
++
++#include <omp.h>
++#include <stdio.h>
++
++#define N 128
++#define NUM_THREADS 256
++#define THREAD_LIMIT 32
++
++struct Args {
++  double *Out;
++};
++
++#pragma omp begin declare target
++extern void __kmpc_distribute_for_static_loop_4u(
++    void *Loc, void (*Fn)(unsigned, void *), void *Arg, unsigned NumIters,
++    unsigned NumThreads, unsigned BlockChunk, unsigned ThreadChunk,
++    unsigned char OneIterationPerThread);
++
++__attribute__((noinline)) static void body(unsigned I, void *A) {
++  ((struct Args *)A)->Out[I] = (double)(I + 1);
++}
++#pragma omp end declare target
++
++// For the host fallback copy only; the device uses the runtime's definition.
++#ifndef __AMDGCN__
++void __kmpc_distribute_for_static_loop_4u(
++    void *Loc, void (*Fn)(unsigned, void *), void *Arg, unsigned NumIters,
++    unsigned NumThreads, unsigned BlockChunk, unsigned ThreadChunk,
++    unsigned char OneIterationPerThread) {
++  for (unsigned I = 0; I < NumIters; ++I)
++    Fn(I, Arg);
++}
++#endif
++
++int main(void) {
++  static double Out[N];
++  for (int I = 0; I < N; ++I)
++    Out[I] = -1.0;
++
++  // NUM_THREADS deliberately exceeds the block's actual thread count.
++#pragma omp target teams map(tofrom : Out[0 : N]) num_teams(4)                 \
++    thread_limit(THREAD_LIMIT)
++  {
++#pragma omp parallel
++    {
++      struct Args A;
++      A.Out = Out;
++      __kmpc_distribute_for_static_loop_4u(0, body, &A, N, NUM_THREADS,
++                                           /*BlockChunk=*/0,
++                                           /*ThreadChunk=*/0,
++                                           /*OneIterationPerThread=*/1);
++    }
++  }
++
++  int Unwritten = 0;
++  for (int I = 0; I < N; ++I)
++    if (Out[I] == -1.0)
++      ++Unwritten;
++
++  // CHECK: unwritten: 0
++  printf("unwritten: %d\n", Unwritten);
++  return 0;
++}
+diff --git a/openmp/device/src/Workshare.cpp b/openmp/device/src/Workshare.cpp
+index 6e6440b690db..a16ef9370798 100644
+--- a/openmp/device/src/Workshare.cpp
++++ b/openmp/device/src/Workshare.cpp
+@@ -895,6 +895,11 @@ public:
+     Ty NumBlocks = mapping::getNumberOfBlocksInKernel();
+     Ty BId = mapping::getBlockIdInKernel();
+ 
++    // The index is BId * NumThreads + TId, so NumThreads must be the real
++    // block size; a larger value strides past each block and drops iterations.
++    if (OneIterationPerThread)
++      NumThreads = static_cast<Ty>(mapping::getMaxTeamThreads());
++
+     // If the block chunk is not specified we pick a default now.
+     if (BlockChunk == 0)
+       BlockChunk = NumThreads;
+-- 
+2.43.5
+

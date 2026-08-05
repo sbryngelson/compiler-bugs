@@ -6,7 +6,7 @@ Nothing here has been filed. Status is stated at the top of each.
 | # | finding | severity | filed? |
 |---|---|---|---|
 | 01 | flang ignores the `schedule` clause in device offload | conformance | no |
-| 02 | flang: `ordered` not honoured on device, **wrong results** | correctness | **filed: llvm#214257** |
+| 02 | flang: `ordered` not honoured on device, **wrong results** | correctness | **filed llvm#214257, fixed by llvm#214263** — see `../amd/flang-device-ordered/` |
 | 03 | AFAR 23.2.1 cannot compile user-defined reductions (version lag, not upstream) | note | n/a |
 | 04 | flang silently drops a `tile` nested in `unroll` | conformance | **superseded** -- TODO diagnostic folded into llvm#214115 |
 
@@ -36,6 +36,20 @@ llvm#211429 and llvm#211132, both ours and neither about schedule or ordered.
 the API returns an error, which reads as an empty result. Use
 `gh search issues --repo llvm/llvm-project "terms"`.
 
+## Open PRs and issues as of 2026-08-05
+
+| PR | subject | state |
+|---|---|---|
+| [llvm#211255](https://github.com/llvm/llvm-project/pull/211255) | inliner cold-callsite threshold in non-callable functions | approved by @arsenm, green, awaiting a committer |
+| [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) | gate `allocate` at OpenMP 5.0 | red by design (83 clang tests); question with @ddpagan / @alexey-bataev on whether clang's pre-5.0 acceptance is deliberate |
+| [llvm#214054](https://github.com/llvm/llvm-project/pull/214054) | quote MIR block names | green, awaiting review |
+| [llvm#214073](https://github.com/llvm/llvm-project/pull/214073) | DeviceRTL no-loop NumThreads | green, awaiting review |
+| [llvm#214115](https://github.com/llvm/llvm-project/pull/214115) | `unroll full` | reviewed by @tblah, three threads answered inline |
+| [llvm#214263](https://github.com/llvm/llvm-project/pull/214263) | dispatch loop for device `ordered` | just opened |
+
+Merged this round: [llvm#214012](https://github.com/llvm/llvm-project/pull/214012), which made
+lowering diagnose a failed construct decomposition instead of falling through it.
+
 ## Harness lessons that cost time
 
 * Probing a DeviceRTL entry point directly can violate the caller's contract and manufacture a
@@ -45,3 +59,14 @@ the API returns an error, which reads as an empty result. Use
   the chunked path, because the chunk argument was silently zero.
 * Overwriting `LD_LIBRARY_PATH` without preserving the previous value made all six mapping probes
   "dump core" at once. Six simultaneous failures is a harness smell, not six bugs.
+* A reproducer that fails by timing can pass by luck. The `ordered` issue was first filed with a
+  port of an upstream test that compares `omp_get_wtime()` values: 16 pass / 4 fail over 20 runs.
+  Prefer a reproducer that cannot pass by luck over one that looks more authoritative.
+* `gh search issues` takes `--repo` as a flag. Passing `repo:llvm/llvm-project` inline makes the
+  whole string a repo name; the API errors and it reads as an empty result. Every "no existing
+  issue found" before this was discovered was invalid.
+* Rebuilding one target and testing with another produced three separate false results in one
+  session: a stale `clang-24`, a stale `bbc`, and a stale `mlir-opt`. `stat` the binary the test
+  actually runs.
+* Interleave configurations before believing a small performance delta. A sequential measurement
+  showed `unroll full` winning upstream; interleaved, the effect vanished.

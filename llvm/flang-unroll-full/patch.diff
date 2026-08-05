@@ -1,0 +1,551 @@
+diff --git a/flang/docs/OpenMPSupport.md b/flang/docs/OpenMPSupport.md
+index fd6731fd28a2..bf5e8f519bfb 100644
+--- a/flang/docs/OpenMPSupport.md
++++ b/flang/docs/OpenMPSupport.md
+@@ -179,7 +179,7 @@ Parser/Semantics, MLIR, Lowering, or the OpenMPIRBuilder.
+ | indirect clause on declare target | <span class="part">partial</span> | | Parser coverage exists (`flang/test/Parser/OpenMP/declare-target-indirect-tree.f90`), while lowering remains TODO-tracked (`flang/test/Lower/OpenMP/Todo/omp-clause-indirect.f90`). | [llvm/llvm-project#143505](https://github.com/llvm/llvm-project/pull/143505) |
+ | error directive | <span class="part">partial</span> | | Semantics coverage exists (`flang/test/Semantics/OpenMP/error.f90`), but lowering still has explicit TODO coverage (`flang/test/Lower/OpenMP/Todo/error.f90`). | [llvm/llvm-project#121509](https://github.com/llvm/llvm-project/pull/121509), [llvm/llvm-project#206175](https://github.com/llvm/llvm-project/pull/206175) |
+ | nothing directive | <span class="good">done</span> | | Parser and lowering coverage exists for standalone and metadirective-selected forms (`flang/test/Parser/OpenMP/nothing.f90`, `flang/test/Lower/OpenMP/nothing.f90`, `flang/test/Lower/OpenMP/metadirective-nothing.f90`). | [llvm/llvm-project#193664](https://github.com/llvm/llvm-project/pull/193664), [llvm/llvm-project#202679](https://github.com/llvm/llvm-project/pull/202679) |
+-| tile and unroll constructs | <span class="part">partial</span> | | Semantics coverage exists across tile/unroll and loop-transformation tests (`flang/test/Semantics/OpenMP/tile01.f90`, `flang/test/Semantics/OpenMP/tile09.f90`, `flang/test/Semantics/OpenMP/loop-transformation-construct01.f90`), with additional lowering/transform completeness work ongoing. | [llvm/llvm-project#160298](https://github.com/llvm/llvm-project/pull/160298), [llvm/llvm-project#185296](https://github.com/llvm/llvm-project/pull/185296), [llvm/llvm-project#188025](https://github.com/llvm/llvm-project/pull/188025) |
++| tile and unroll constructs | <span class="part">partial</span> | | Semantics coverage exists across tile/unroll and loop-transformation tests (`flang/test/Semantics/OpenMP/tile01.f90`, `flang/test/Semantics/OpenMP/tile09.f90`, `flang/test/Semantics/OpenMP/loop-transformation-construct01.f90`), with additional lowering/transform completeness work ongoing. The `full` and `partial` clauses on `unroll` are lowered (`flang/test/Lower/OpenMP/unroll-full01.f90`, `flang/test/Lower/OpenMP/unroll-partial01.f90`). | [llvm/llvm-project#160298](https://github.com/llvm/llvm-project/pull/160298), [llvm/llvm-project#185296](https://github.com/llvm/llvm-project/pull/185296), [llvm/llvm-project#188025](https://github.com/llvm/llvm-project/pull/188025) |
+ | scope construct | <span class="part">partial</span> | | Scope construct support is available, with follow-on completeness work still in progress for some combinations (see also OpenMP 5.2 scope-related rows). | [llvm/llvm-project#113700](https://github.com/llvm/llvm-project/pull/113700), [llvm/llvm-project#193098](https://github.com/llvm/llvm-project/pull/193098) |
+ | assumes directives | <span class="none">unclaimed</span> | | Lowering still has explicit TODO (`flang/lib/Lower/OpenMP/OpenMP.cpp` TODO: `OpenMP ASSUMES declaration`; `flang/test/Lower/OpenMP/Todo/assumes.f90`). | [llvm/llvm-project#102008](https://github.com/llvm/llvm-project/pull/102008) |
+ | assume directive | <span class="none">unclaimed</span> | | Lowering still has explicit TODO (`flang/lib/Lower/OpenMP/OpenMP.cpp` TODO: `OpenMP ASSUME construct`; `flang/test/Lower/OpenMP/Todo/assume.f90`). | [llvm/llvm-project#102008](https://github.com/llvm/llvm-project/pull/102008) |
+diff --git a/flang/lib/Lower/OpenMP/ClauseProcessor.cpp b/flang/lib/Lower/OpenMP/ClauseProcessor.cpp
+index 5a554def351e..bc19844e7988 100644
+--- a/flang/lib/Lower/OpenMP/ClauseProcessor.cpp
++++ b/flang/lib/Lower/OpenMP/ClauseProcessor.cpp
+@@ -842,6 +842,10 @@ bool ClauseProcessor::processOrdered(
+   return false;
+ }
+ 
++bool ClauseProcessor::processFull() const {
++  return findUniqueClause<omp::clause::Full>() != nullptr;
++}
++
+ bool ClauseProcessor::processPartial(std::optional<int64_t> &result) const {
+   if (auto *clause = findUniqueClause<omp::clause::Partial>()) {
+     if (clause->v.has_value())
+diff --git a/flang/lib/Lower/OpenMP/ClauseProcessor.h b/flang/lib/Lower/OpenMP/ClauseProcessor.h
+index cb42b6524e2e..c542f61adb7e 100644
+--- a/flang/lib/Lower/OpenMP/ClauseProcessor.h
++++ b/flang/lib/Lower/OpenMP/ClauseProcessor.h
+@@ -111,6 +111,7 @@ public:
+                          mlir::omp::NumThreadsClauseOps &result) const;
+   bool processOrder(mlir::omp::OrderClauseOps &result) const;
+   bool processOrdered(mlir::omp::OrderedClauseOps &result) const;
++  bool processFull() const;
+   bool processPartial(std::optional<int64_t> &result) const;
+   bool processPriority(lower::StatementContext &stmtCtx,
+                        mlir::omp::PriorityClauseOps &result) const;
+diff --git a/flang/lib/Lower/OpenMP/OpenMP.cpp b/flang/lib/Lower/OpenMP/OpenMP.cpp
+index ae1eb897c934..73f3539e328e 100644
+--- a/flang/lib/Lower/OpenMP/OpenMP.cpp
++++ b/flang/lib/Lower/OpenMP/OpenMP.cpp
+@@ -3398,6 +3398,22 @@ static void genFuseOp(Fortran::lower::AbstractConverter &converter,
+                             looprangeClause.first, looprangeClause.count);
+ }
+ 
++// Returns true when an OpenMP construct sits between \p eval and the DO loop it
++// applies to. getNestedDoConstruct descends through such a construct to reach
++// the loop, which means the intervening construct is never lowered.
++static bool hasNestedLoopTransformation(lower::pft::Evaluation &eval) {
++  for (lower::pft::Evaluation &nested : eval.getNestedEvaluations()) {
++    if (nested.getIf<parser::CompilerDirective>() ||
++        nested.getIf<parser::NonLabelDoStmt>())
++      continue;
++    if (nested.getIf<parser::DoConstruct>())
++      return false;
++    if (nested.getIf<parser::OpenMPConstruct>())
++      return true;
++  }
++  return false;
++}
++
+ static void genUnrollOp(Fortran::lower::AbstractConverter &converter,
+                         Fortran::lower::SymMap &symTable,
+                         lower::StatementContext &stmtCtx,
+@@ -3409,8 +3425,8 @@ static void genUnrollOp(Fortran::lower::AbstractConverter &converter,
+ 
+   ClauseProcessor cp(converter, semaCtx, item->clauses);
+ 
+-  // The `full` clause is not yet implemented.
+-  cp.processTODO<clause::Full>(loc, llvm::omp::Directive::OMPD_unroll);
++  // Process the `full` clause, which requests complete unrolling.
++  bool hasFull = cp.processFull();
+ 
+   // Process the `partial` clause. If present, it may carry a constant unroll
+   // factor.
+@@ -3419,6 +3435,12 @@ static void genUnrollOp(Fortran::lower::AbstractConverter &converter,
+   if (hasPartial && !partialFactor.has_value())
+     TODO(loc, "PARTIAL clause on UNROLL without a constant factor");
+ 
++  // Chaining a loop transformation onto the result of UNROLL needs the
++  // unrolled loop to be available as a generatee, which omp.unroll_* does not
++  // provide yet. Diagnose instead of silently dropping the nested construct.
++  if (hasNestedLoopTransformation(eval))
++    TODO(loc, "loop transformation nested inside an UNROLL construct");
++
+   // Emit the associated loop
+   llvm::SmallVector<mlir::omp::CanonicalLoopOp, 1> canonLoops;
+   genCanonicalLoopNest(converter, symTable, semaCtx, eval,
+@@ -3431,7 +3453,10 @@ static void genUnrollOp(Fortran::lower::AbstractConverter &converter,
+ 
+   auto cli = llvm::getSingleElement(canonLoops).getCli();
+ 
+-  if (partialFactor.has_value()) {
++  if (hasFull) {
++    // Fully unroll the loop.
++    mlir::omp::UnrollFullOp::create(firOpBuilder, loc, cli);
++  } else if (partialFactor.has_value()) {
+     // Partially unroll the loop by the given constant factor.
+     mlir::omp::UnrollPartialOp::create(firOpBuilder, loc, cli,
+                                        static_cast<uint64_t>(*partialFactor));
+diff --git a/flang/lib/Semantics/check-omp-loop.cpp b/flang/lib/Semantics/check-omp-loop.cpp
+index 65d097b5a31f..df912e1e7b8f 100644
+--- a/flang/lib/Semantics/check-omp-loop.cpp
++++ b/flang/lib/Semantics/check-omp-loop.cpp
+@@ -443,6 +443,41 @@ void OmpStructureChecker::Enter(const parser::OpenMPLoopConstruct &x) {
+       beginName.v == llvm::omp::Directive::OMPD_distribute_simd) {
+     CheckDistLinear(x);
+   }
++  if (beginName.v == llvm::omp::Directive::OMPD_unroll) {
++    CheckUnrollFullTripCount(x);
++  }
++}
++
++// A loop that is fully unrolled must have a trip count that is known at compile
++// time, so its bounds and step have to be constant expressions.
++void OmpStructureChecker::CheckUnrollFullTripCount(
++    const parser::OpenMPLoopConstruct &x) {
++  const parser::OmpDirectiveSpecification &beginSpec{x.BeginDir()};
++  const parser::OmpClause *full{
++      parser::omp::FindClause(beginSpec, llvm::omp::Clause::OMPC_full)};
++  if (!full) {
++    return;
++  }
++
++  const parser::DoConstruct *doConstruct{x.GetNestedLoop()};
++  if (!doConstruct) {
++    return;
++  }
++  const auto &control{doConstruct->GetLoopControl()};
++  if (!control) {
++    return;
++  }
++  const auto *bounds{std::get_if<parser::LoopControl::Bounds>(&control->u)};
++  if (!bounds) {
++    return;
++  }
++  bool isConstant{GetIntValue(bounds->Lower()).has_value() &&
++      GetIntValue(bounds->Upper()).has_value() &&
++      (!bounds->Step() || GetIntValue(*bounds->Step()).has_value())};
++  if (!isConstant) {
++    context_.Say(full->source,
++        "The loop associated with an UNROLL directive with a FULL clause must have a constant trip count"_err_en_US);
++  }
+ }
+ 
+ const parser::Name OmpStructureChecker::GetLoopIndex(
+diff --git a/flang/lib/Semantics/check-omp-structure.h b/flang/lib/Semantics/check-omp-structure.h
+index 4acec2ad05ba..c732463b6774 100644
+--- a/flang/lib/Semantics/check-omp-structure.h
++++ b/flang/lib/Semantics/check-omp-structure.h
+@@ -303,6 +303,7 @@ private:
+   void CheckAssociatedLoopConstraints(const parser::OpenMPLoopConstruct &x);
+   void CheckScanModifier(const parser::OmpClause::Reduction &x);
+   void CheckDistLinear(const parser::OpenMPLoopConstruct &x);
++  void CheckUnrollFullTripCount(const parser::OpenMPLoopConstruct &x);
+ 
+   void BeginMetadirectiveVariantScope();
+   void EndMetadirectiveVariantScope();
+diff --git a/flang/test/Lower/OpenMP/Todo/unroll-nested-transform.f90 b/flang/test/Lower/OpenMP/Todo/unroll-nested-transform.f90
+new file mode 100644
+index 000000000000..689d230cfd99
+--- /dev/null
++++ b/flang/test/Lower/OpenMP/Todo/unroll-nested-transform.f90
+@@ -0,0 +1,17 @@
++! RUN: %not_todo_cmd %flang_fc1 -emit-fir -fopenmp -fopenmp-version=51 -o - %s 2>&1 | FileCheck %s
++
++! CHECK: not yet implemented: loop transformation nested inside an UNROLL construct
++
++! Chaining a transformation onto the result of UNROLL needs the unrolled loop to
++! be available as a generatee, which omp.unroll_* does not provide. Before this
++! was diagnosed the nested construct was silently dropped.
++subroutine unroll_nested_tile
++  integer :: res, i
++  !$omp unroll full
++  !$omp tile sizes(4)
++  do i = 1, 100
++    res = i
++  end do
++  !$omp end tile
++  !$omp end unroll
++end subroutine
+diff --git a/flang/test/Lower/OpenMP/unroll-full01.f90 b/flang/test/Lower/OpenMP/unroll-full01.f90
+new file mode 100644
+index 000000000000..c8741bf7314c
+--- /dev/null
++++ b/flang/test/Lower/OpenMP/unroll-full01.f90
+@@ -0,0 +1,17 @@
++! RUN: %flang_fc1 -emit-hlfir -fopenmp -fopenmp-version=51 -o - %s | FileCheck %s
++
++subroutine test_unroll_full
++  integer res, i
++
++  !$omp unroll full
++  do i = 1, 100
++    res = i
++  end do
++  !$omp end unroll
++end subroutine test_unroll_full
++
++! CHECK-LABEL: func.func @_QPtest_unroll_full() {
++! CHECK:         %[[CLI:.+]] = omp.new_cli
++! CHECK:         omp.canonical_loop(%[[CLI]]) %{{.*}} : i32 in range(%{{.*}}) {
++! CHECK:         omp.unroll_full(%[[CLI]])
++! CHECK:       }
+diff --git a/flang/test/Semantics/OpenMP/unroll-clauses.f90 b/flang/test/Semantics/OpenMP/unroll-clauses.f90
+new file mode 100644
+index 000000000000..68dd47ce29b9
+--- /dev/null
++++ b/flang/test/Semantics/OpenMP/unroll-clauses.f90
+@@ -0,0 +1,73 @@
++! Testing the Semantics of the FULL and PARTIAL clauses on the UNROLL directive
++
++!RUN: %python %S/../test_errors.py %s %flang -fopenmp -fopenmp-version=51
++
++subroutine unroll_clauses
++  implicit none
++  integer, parameter :: n = 8
++  integer :: i
++  integer :: v(n)
++
++  !ERROR: FULL and PARTIAL clauses are mutually exclusive and may not appear on the same UNROLL directive
++  !$omp unroll full partial(2)
++  do i = 1, n
++    v(i) = i
++  end do
++  !$omp end unroll
++
++  !ERROR: At most one FULL clause can appear on UNROLL directive
++  !$omp unroll full full
++  do i = 1, n
++    v(i) = i
++  end do
++  !$omp end unroll
++
++  ! Each clause on its own is accepted.
++  !$omp unroll full
++  do i = 1, n
++    v(i) = i
++  end do
++  !$omp end unroll
++
++  !$omp unroll partial(2)
++  do i = 1, n
++    v(i) = i
++  end do
++  !$omp end unroll
++end subroutine
++
++subroutine unroll_full_trip_count(m, s)
++  implicit none
++  integer, parameter :: n = 8
++  integer :: m, s, i
++  integer :: v(n)
++
++  ! A fully unrolled loop must have a trip count known at compile time.
++  !ERROR: The loop associated with an UNROLL directive with a FULL clause must have a constant trip count
++  !$omp unroll full
++  do i = 1, m
++    v(1) = i
++  end do
++  !$omp end unroll
++
++  !ERROR: The loop associated with an UNROLL directive with a FULL clause must have a constant trip count
++  !$omp unroll full
++  do i = 1, n, s
++    v(1) = i
++  end do
++  !$omp end unroll
++
++  ! Constant bounds are fine, including named constants.
++  !$omp unroll full
++  do i = 1, n
++    v(i) = i
++  end do
++  !$omp end unroll
++
++  ! PARTIAL places no such requirement on the loop.
++  !$omp unroll partial(2)
++  do i = 1, m
++    v(1) = i
++  end do
++  !$omp end unroll
++end subroutine
+diff --git a/llvm/include/llvm/Frontend/OpenMP/OMP.td b/llvm/include/llvm/Frontend/OpenMP/OMP.td
+index a119dff67c30..db20e5a840ca 100644
+--- a/llvm/include/llvm/Frontend/OpenMP/OMP.td
++++ b/llvm/include/llvm/Frontend/OpenMP/OMP.td
+@@ -1477,7 +1477,7 @@ def OMP_Unroll : Directive<[Spelling<"unroll">]> {
+   let allowedClauses = [
+     VersionedClause<OMPC_Apply, 60>,
+   ];
+-  let allowedOnceClauses = [
++  let allowedExclusiveClauses = [
+     VersionedClause<OMPC_Full, 51>,
+     VersionedClause<OMPC_Partial, 51>,
+   ];
+diff --git a/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td b/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
+index 70597b85902c..e085c2e564ac 100644
+--- a/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
++++ b/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
+@@ -557,6 +557,37 @@ def UnrollHeuristicOp : OpenMPTransform_Op<"unroll_heuristic", []> {
+   let hasCustomAssemblyFormat = 1;
+ }
+ 
++//===----------------------------------------------------------------------===//
++// OpenMP unroll_full operation
++//===----------------------------------------------------------------------===//
++
++def UnrollFullOp : OpenMPTransform_Op<"unroll_full", []> {
++  let summary = "OpenMP full unroll operation";
++  let description = [{
++    Represents a `#pragma omp unroll full` construct introduced in OpenMP 5.1.
++
++    The operation has one applyee and no generatees. The applyee is fully
++    unrolled, so it must have a compile-time constant trip count. Because no
++    loop remains afterwards, there is no generatee and no further
++    loop-associated transformation can be chained onto it.
++
++    The lowering is implemented using `OpenMPIRBuilder::unrollLoopFull`.
++
++    Assembly formats:
++      omp.unroll_full(%cli)
++      omp.unroll_full(%cli) -> ()
++  }];
++
++  let arguments = (ins CanonicalLoopInfoType:$applyee);
++
++  let builders = [
++    OpBuilder<(ins "::mlir::Value":$cli)>,
++  ];
++
++  let hasCustomAssemblyFormat = 1;
++  let hasVerifier = 1;
++}
++
+ //===----------------------------------------------------------------------===//
+ // OpenMP unroll_partial operation
+ //===----------------------------------------------------------------------===//
+diff --git a/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp b/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
+index 8605b39f17c1..1ac1ae2111b9 100644
+--- a/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
++++ b/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
+@@ -4347,6 +4347,67 @@ UnrollHeuristicOp::getGenerateesODSOperandIndexAndLength() {
+   return {0, 0};
+ }
+ 
++//===----------------------------------------------------------------------===//
++// UnrollFullOp
++//===----------------------------------------------------------------------===//
++
++void UnrollFullOp::build(::mlir::OpBuilder &odsBuilder,
++                         ::mlir::OperationState &odsState, ::mlir::Value cli) {
++  odsState.addOperands(cli);
++}
++
++void UnrollFullOp::print(OpAsmPrinter &p) {
++  p << '(' << getApplyee() << ')';
++
++  p.printOptionalAttrDict((*this)->getAttrs());
++}
++
++mlir::ParseResult UnrollFullOp::parse(::mlir::OpAsmParser &parser,
++                                      ::mlir::OperationState &result) {
++  auto cliType = CanonicalLoopInfoType::get(parser.getContext());
++
++  if (parser.parseLParen())
++    return failure();
++
++  OpAsmParser::UnresolvedOperand applyee;
++  if (parser.parseOperand(applyee) ||
++      parser.resolveOperand(applyee, cliType, result.operands))
++    return failure();
++
++  if (parser.parseRParen())
++    return failure();
++
++  // Optional output loop; full unrolling has none.
++  if (!parser.parseOptionalArrow()) {
++    if (parser.parseLParen() || parser.parseRParen())
++      return failure();
++  }
++
++  // Parse the optional attribute list.
++  if (parser.parseOptionalAttrDict(result.attributes))
++    return failure();
++
++  return mlir::success();
++}
++
++std::pair<unsigned, unsigned>
++UnrollFullOp::getApplyeesODSOperandIndexAndLength() {
++  return getODSOperandIndexAndLength(odsIndex_applyee);
++}
++
++std::pair<unsigned, unsigned>
++UnrollFullOp::getGenerateesODSOperandIndexAndLength() {
++  return {0, 0};
++}
++
++LogicalResult UnrollFullOp::verify() {
++  auto [create, gen, cons] = decodeCli(getApplyee());
++  if (!gen)
++    return emitOpError() << "applyee CLI has no generator";
++
++  return success();
++}
++
+ //===----------------------------------------------------------------------===//
+ // UnrollPartialOp
+ //===----------------------------------------------------------------------===//
+diff --git a/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp b/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp
+index 1c50ff192c3d..b81707907296 100644
+--- a/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp
++++ b/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp
+@@ -5379,6 +5379,25 @@ applyUnrollHeuristic(omp::UnrollHeuristicOp op, llvm::IRBuilderBase &builder,
+   return success();
+ }
+ 
++/// Apply a `#pragma omp unroll full` / `!$omp unroll full` transformation
++/// using the OpenMPIRBuilder.
++static LogicalResult
++applyUnrollFull(omp::UnrollFullOp op, llvm::IRBuilderBase &builder,
++                LLVM::ModuleTranslation &moduleTranslation) {
++  llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
++
++  Value applyee = op.getApplyee();
++  assert(applyee && "Loop to apply unrolling on required");
++
++  llvm::CanonicalLoopInfo *consBuilderCLI =
++      moduleTranslation.lookupOMPLoop(applyee);
++  llvm::OpenMPIRBuilder::LocationDescription loc(builder);
++  ompBuilder->unrollLoopFull(loc.DL, consBuilderCLI);
++
++  moduleTranslation.invalidateOmpLoop(applyee);
++  return success();
++}
++
+ /// Apply a `#pragma omp unroll partial` / `!$omp unroll partial`
+ /// transformation using the OpenMPIRBuilder.
+ static LogicalResult
+@@ -10040,6 +10059,9 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
+             // the omp.canonical_loop.
+             return applyUnrollHeuristic(op, builder, moduleTranslation);
+           })
++          .Case([&](omp::UnrollFullOp op) {
++            return applyUnrollFull(op, builder, moduleTranslation);
++          })
+           .Case([&](omp::UnrollPartialOp op) {
+             return applyUnrollPartial(op, builder, moduleTranslation);
+           })
+diff --git a/mlir/test/Dialect/OpenMP/cli-unroll-full.mlir b/mlir/test/Dialect/OpenMP/cli-unroll-full.mlir
+new file mode 100644
+index 000000000000..b52635b1f194
+--- /dev/null
++++ b/mlir/test/Dialect/OpenMP/cli-unroll-full.mlir
+@@ -0,0 +1,33 @@
++// RUN: mlir-opt %s            | FileCheck %s --enable-var-scope
++// RUN: mlir-opt %s | mlir-opt | FileCheck %s --enable-var-scope
++
++
++// CHECK-LABEL: @omp_unroll_full_raw(
++// CHECK-SAME: %[[tc:.+]]: i32) {
++func.func @omp_unroll_full_raw(%tc : i32) -> () {
++  // CHECK-NEXT: %canonloop = omp.new_cli
++  %canonloop = "omp.new_cli" () : () -> (!omp.cli)
++  // CHECK-NEXT: omp.canonical_loop(%canonloop) %iv : i32 in range(%[[tc]]) {
++  "omp.canonical_loop" (%tc, %canonloop) ({
++    ^bb0(%iv: i32):
++      omp.terminator
++  }) : (i32, !omp.cli) -> ()
++  // CHECK: omp.unroll_full(%canonloop)
++  "omp.unroll_full" (%canonloop) : (!omp.cli) -> ()
++  return
++}
++
++
++// CHECK-LABEL: @omp_unroll_full_pretty(
++// CHECK-SAME: %[[tc:.+]]: i32) {
++func.func @omp_unroll_full_pretty(%tc : i32) -> () {
++  // CHECK-NEXT: %[[CANONLOOP:.+]] = omp.new_cli
++  %canonloop = omp.new_cli
++  // CHECK-NEXT:  omp.canonical_loop(%canonloop) %iv : i32 in range(%[[tc]]) {
++  omp.canonical_loop(%canonloop) %iv : i32 in range(%tc) {
++    omp.terminator
++  }
++  // CHECK: omp.unroll_full(%canonloop)
++  omp.unroll_full(%canonloop)
++  return
++}
+diff --git a/mlir/test/Target/LLVMIR/openmp-unroll-full01.mlir b/mlir/test/Target/LLVMIR/openmp-unroll-full01.mlir
+new file mode 100644
+index 000000000000..97ae7a12e986
+--- /dev/null
++++ b/mlir/test/Target/LLVMIR/openmp-unroll-full01.mlir
+@@ -0,0 +1,21 @@
++// Test lowering of omp.unroll_full (single loop)
++// RUN: mlir-translate -mlir-to-llvmir %s | FileCheck %s
++
++llvm.func @unroll_full_trivial_loop(%baseptr: !llvm.ptr, %tc: i32) -> () {
++  %literal_cli = omp.new_cli
++  omp.canonical_loop(%literal_cli) %iv : i32 in range(%tc) {
++    %ptr = llvm.getelementptr inbounds %baseptr[%iv] : (!llvm.ptr, i32) -> !llvm.ptr, f32
++    %val = llvm.mlir.constant(42.0 : f32) : f32
++    llvm.store %val, %ptr : f32, !llvm.ptr
++    omp.terminator
++  }
++  omp.unroll_full(%literal_cli)
++  llvm.return
++}
++
++// CHECK-LABEL: define void @unroll_full_trivial_loop(
++// The loop is marked for full unrolling; LLVM's LoopUnroll pass performs it.
++// CHECK: br label %omp_omp.loop.header, !llvm.loop ![[MD:[0-9]+]]
++// CHECK: ![[MD]] = distinct !{![[MD]], ![[ENABLE:[0-9]+]], ![[FULL:[0-9]+]]}
++// CHECK-DAG: ![[ENABLE]] = !{!"llvm.loop.unroll.enable"}
++// CHECK-DAG: ![[FULL]] = !{!"llvm.loop.unroll.full"}
+diff --git a/mlir/test/Target/LLVMIR/openmp-unroll-full02.mlir b/mlir/test/Target/LLVMIR/openmp-unroll-full02.mlir
+new file mode 100644
+index 000000000000..ed20ac2fdfe6
+--- /dev/null
++++ b/mlir/test/Target/LLVMIR/openmp-unroll-full02.mlir
+@@ -0,0 +1,26 @@
++// Test lowering of omp.unroll_full applied to the inner loop of a nest
++// RUN: mlir-translate -mlir-to-llvmir %s | FileCheck %s
++
++llvm.func @unroll_full_inner_loop(%baseptr: !llvm.ptr, %tc1: i32, %tc2: i32) -> () {
++  %outer_cli = omp.new_cli
++  %inner_cli = omp.new_cli
++  omp.canonical_loop(%outer_cli) %iv1 : i32 in range(%tc1) {
++    omp.canonical_loop(%inner_cli) %iv2 : i32 in range(%tc2) {
++      %ptr = llvm.getelementptr inbounds %baseptr[%iv2] : (!llvm.ptr, i32) -> !llvm.ptr, f32
++      %val = llvm.mlir.constant(42.0 : f32) : f32
++      llvm.store %val, %ptr : f32, !llvm.ptr
++      omp.terminator
++    }
++    omp.terminator
++  }
++  omp.unroll_full(%inner_cli)
++  llvm.return
++}
++
++// Only the inner loop carries the full-unroll metadata; the outer loop is
++// untouched.
++// CHECK-LABEL: define void @unroll_full_inner_loop(
++// CHECK: !llvm.loop ![[MD:[0-9]+]]
++// CHECK: ![[MD]] = distinct !{![[MD]], ![[ENABLE:[0-9]+]], ![[FULL:[0-9]+]]}
++// CHECK-DAG: ![[ENABLE]] = !{!"llvm.loop.unroll.enable"}
++// CHECK-DAG: ![[FULL]] = !{!"llvm.loop.unroll.full"}
