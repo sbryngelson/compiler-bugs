@@ -8,7 +8,7 @@ version of the report was wrong.
 |---|---|
 | Issue | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) — root cause posted [as a comment](https://github.com/llvm/llvm-project/issues/211430#issuecomment-5181030223) |
 | Crash fix PR | [llvm#214012](https://github.com/llvm/llvm-project/pull/214012) — `Diagnose failed construct decomposition instead of falling through`. **MERGED 2026-08-04.** Stops the segfault for *any* directive/clause pair that decomposes empty |
-| Diagnostic PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — reworked 2026-08-04 to gate in flang semantics instead of `OMP.td`, after the table version broke 83 clang tests. Open |
+| Diagnostic PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — gated in `OMP.td` for both frontends. Briefly reworked into flang semantics on 2026-08-04 to dodge the clang fallout; kparzysz rejected that and asked for the table fix, so the 83 clang tests were converted instead. Approved by kparzysz, direction confirmed by alexey-bataev, **green on all four platforms 2026-08-05**. Open, awaiting a committer |
 
 The PR deliberately does **not** carry a `Fixes` keyword and the issue comment says explicitly not
 to close #211430 on it: the gate removes reachability, the uninitialized read is untouched. See
@@ -259,6 +259,54 @@ error: loc("repro.f90":6:11): OpenMP construct decomposition failed: a clause on
 This covers every directive/clause pair that decomposes empty, not just `allocate`, so #211430
 stops segfaulting regardless of how the gating question resolves. What #213980 would add on top is
 the *correct* diagnostic naming the clause and version, rather than this generic one.
+
+## Gating #213980, resolved 2026-08-05
+
+kparzysz: fix it in `OMP.td` so it covers both frontends, and either gate everywhere or drop the
+`50` everywhere. alexey-bataev settled the clang half — "Clang default is 5.2, IIRC, so it should
+not cause big troubles" — so gating won. 58 instances changed, 3 already gated, 61 total, none left
+ungated.
+
+That makes 83 `clang/test/OpenMP` tests fail, in four shapes, not the two the PR first claimed:
+
+| | files | change |
+|---|---|---|
+| annotation only | 32 | add `omp45-error N {{unexpected OpenMP clause 'allocate' ...}}` |
+| annotation + warning | 35 | plus 49 `expected-warning` instances narrowed to `ge50-warning` |
+| bare `-verify` | 5 | convert to prefixed `-verify`, then as above |
+| `-ast-print` / codegen | 11 | version-guard the pragma, split FileCheck lines by prefix |
+
+Result: 1550 passed, 0 failed locally, then green on Linux, Linux AArch64, Windows and macOS.
+
+**Precedent.** [llvm#151154](https://github.com/llvm/llvm-project/pull/151154) gated `if` on
+`do simd` the same way (`VersionedClause<OMPC_If>` -> `<OMPC_If, 50>`) and landed as *one line plus
+two tests*, because `OMP_DoSimd` is a separate record from `OMP_ForSimd` and never reaches clang.
+`allocate` sits on shared directives, which is the whole reason this one is 94 files. Worth citing
+when a reviewer asks why the diff is so much bigger than the obvious precedent.
+
+`ge50` was **not** invented here: it already exists in 12 clang tests alongside `lt50` and `ge60`,
+with occurrence counts. Verify that kind of claim against pristine `HEAD`, not the working tree —
+the first grep matched the edits under review and would have "confirmed" an invention.
+
+### Four things that cost time
+
+**Annotating cannot work when a RUN line has no `-verify`.** The `-ast-print` tests carry
+`-emit-pch` runs without it, so a new error is fatal there no matter what is annotated. Those need
+the clause removed from the pre-5.0 source path, not a diagnostic expectation.
+
+**Do not expand a CHECK line that is already version-specific.** These files carry `OMP45`/`OMP50`/
+`OMP51`/`OMP52` lines as four alternatives for one output line. A splitter that treats each as
+generic turns 4 lines into 16. Expand only bare `CHECK`; on an existing `OMP45` line just strip the
+clause.
+
+**`#ifndef HEADER` breaks naive depth tracking.** Every one of these tests opens with it, so a
+"is this pragma at depth 0" test finds nothing. Seven sites were silently skipped until the guard
+was special-cased.
+
+**Line numbers captured before an edit pass are worthless after it.** A hardcoded site list built
+from a post-CHECK-insertion dump rejected 7 of 16 sites on the reverted files. The assertion in the
+wrapper is the only reason it failed loudly instead of editing the wrong lines. Prefer
+content-matching over line numbers for anything applied more than once.
 
 **Verification note:** the binary was confirmed newer than the patched source (12:11:16 vs
 11:13:52) before any of these numbers were taken — the check whose absence invalidated the clang

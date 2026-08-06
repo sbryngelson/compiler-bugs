@@ -3,7 +3,13 @@
 | | |
 |---|---|
 | Issue | [llvm#214257](https://github.com/llvm/llvm-project/issues/214257) |
-| Fix PR | [llvm#214263](https://github.com/llvm/llvm-project/pull/214263) -- `[OpenMPIRBuilder] Emit a dispatch loop for ordered worksharing loops on the device` |
+| Fix PR | [llvm#214263](https://github.com/llvm/llvm-project/pull/214263) -- `[OpenMPIRBuilder] Emit a dispatch loop for ordered worksharing loops on the device`. Green 2026-08-05, reviewers tagged (skatrak, tblah) |
+
+**CI red once for a reason that was not ours (2026-08-05).** The first run died building
+`SLPVectorizer.cpp` on `error: captured structured bindings are a C++20 extension` -- a file this PR
+does not touch. Upstream broke it and fixed it two minutes later in `5d234827e`; the run just landed
+in that window. A rebase cleared it. Before debugging a premerge failure, check whether the failing
+file is even in the diff, and whether the base commit predates a known fix.
 
 A conforming program using `ordered` inside a target region gets wrong results. The same source is
 correct on the host, and the C equivalent is correct on the same GPU under clang.
