@@ -2,6 +2,35 @@
 
 Recorded so they are not re-derived.
 
+**ROCm 7.2.0 breaks device array reduction and array `firstprivate`; both already fixed in AFAR 23.2.x
+(2026-08-06).** Found while diversifying away from the `applyWorkshareLoop` family. Two clean
+reproducers in `divhunt/`: `reduction(+: a)` on an 8-line `target parallel do` with `a` a 4-element
+`real(8)`, and `firstprivate(buf)` of an array inside a target region.
+
+| toolchain | flang | array reduction | array firstprivate |
+|---|---|---|---|
+| ROCm 7.1.0 | 22.0.0git | compile error, `'fir.embox' op using value defined outside the region` | -- |
+| ROCm 7.2.0 | 22.0.0git | **GPU memory fault at address (nil)** | **`ld.lld: undefined symbol: _FortranAAssign`** |
+| AFAR 23.2.0 / 23.2.1 | 23.0.0git | correct | pass |
+| upstream | 24.0.0git | compiles clean (runtime not exercised) | -- |
+
+Not filed anywhere: AMD has already fixed both. The scalar reduction is fine in every version, so it
+is the array-ness, not the construct -- it reproduces on `target teams distribute parallel do` and on
+plain `target parallel do` alike. **For MFC this is a toolchain-selection fact: do not use ROCm 7.2.0
+for array reductions or array `firstprivate` on device.** The `_FortranAAssign` failure is the head of
+the reachability chain in [flang-rt-device-unresolvable-refs](flang-rt-device-unresolvable-refs), now
+resolved in the newer drops.
+
+Two other probes hit clean diagnostics rather than miscompiles, so they are missing features and not
+worth chasing: non-rectangular `collapse(2)` ("Trip count must be computable and invariant") and a
+strided section on `target update` ("stride cannot be specified on an array section").
+
+**Method note.** ROCm 6.4.1 also produces the right answer, but its `amdflang` is flang-*classic*
+(19.0.0), a different compiler -- so "6.4.1 works, 7.2.0 crashes" is not a regression and must not be
+reported as one. Always check `--version` before framing a cross-version difference that way, and
+always retest a crash across the AFAR drops before filing: this one looked like a fileable hard crash
+with a tiny reproducer right up until the newer drops passed it.
+
 **Private-array promotion cliff above ~16 equations (2026-07-22).** On a WENO5 + HLLC kernel the
 private state arrays stop being promoted between NEQ=16 and NEQ=18: scratch appears (296 → 520 B/lane,
 +16 B per equation), VGPRs drop 124 → 70 and occupancy *rises* 4 → 7, with `VGPRs Spill: 0` — so it is
