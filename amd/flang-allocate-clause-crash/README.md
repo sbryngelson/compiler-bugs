@@ -8,7 +8,7 @@ version of the report was wrong.
 |---|---|
 | Issue | [llvm#211430](https://github.com/llvm/llvm-project/issues/211430) — root cause posted [as a comment](https://github.com/llvm/llvm-project/issues/211430#issuecomment-5181030223) |
 | Crash fix PR | [llvm#214012](https://github.com/llvm/llvm-project/pull/214012) — `Diagnose failed construct decomposition instead of falling through`. **MERGED 2026-08-04.** Stops the segfault for *any* directive/clause pair that decomposes empty |
-| Diagnostic PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — gated in `OMP.td` for both frontends. Briefly reworked into flang semantics on 2026-08-04 to dodge the clang fallout; kparzysz rejected that and asked for the table fix, so the 83 clang tests were converted instead. Approved by kparzysz, direction confirmed by alexey-bataev, **green on all four platforms 2026-08-05**. Open, awaiting a committer |
+| Diagnostic PR | [llvm#213980](https://github.com/llvm/llvm-project/pull/213980) — gated in `OMP.td` for both frontends. Briefly reworked into flang semantics on 2026-08-04 to dodge the clang fallout; kparzysz rejected that and asked for the table fix, so the 83 clang tests were converted instead. Approved by kparzysz, direction confirmed by alexey-bataev, **green on all four platforms 2026-08-05**. Second approval from Saieiei 2026-08-06; **MERGED 2026-08-07** after asking the approvers to land it |
 
 The PR deliberately does **not** carry a `Fixes` keyword and the issue comment says explicitly not
 to close #211430 on it: the gate removes reachability, the uninitialized read is untouched. See

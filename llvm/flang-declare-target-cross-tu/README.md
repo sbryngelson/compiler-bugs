@@ -2,8 +2,21 @@
 
 | | |
 |---|---|
-| Issue | [llvm#214586](https://github.com/llvm/llvm-project/issues/214586) |
-| PR | [llvm#214596](https://github.com/llvm/llvm-project/pull/214596) |
+| Real issue | [llvm#212333](https://github.com/llvm/llvm-project/issues/212333) — filed 2026-07-27 |
+| Real fix | [llvm#213930](https://github.com/llvm/llvm-project/pull/213930) — filed 2026-08-04 |
+| Mine, closed as duplicate | [llvm#214586](https://github.com/llvm/llvm-project/issues/214586), [llvm#214596](https://github.com/llvm/llvm-project/pull/214596) |
+
+## Duplicate — kept for the reproducer and the two dead ends
+
+Filed 2026-08-06 without finding #212333, which was already open, and #213930, which already fixed
+it. @VeeEM pointed both out the next morning. The search missed them because #212333 is titled
+"Offloading global variable regression" and describes the symptom rather than the mechanism, so no
+keyword overlapped; and because only issues were searched, not open PRs, where #213930 would have
+turned up immediately. **Search open PRs, not just issues, before filing a fix.**
+
+#213930 uses `ultimateSymbol.IsFromModFile()`, which states the condition directly. The patch here
+inferred the same thing from the global having no initializer body — equivalent in effect but
+indirect, and it took a wrong turn to get there (below).
 
 A module variable marked `!$omp declare target` is emitted as a fresh `internal` global
 initialized to `undef` in every TU that reads it, instead of a reference to the device global the
