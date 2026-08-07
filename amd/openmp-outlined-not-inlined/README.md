@@ -4,7 +4,15 @@ Target: gfx90a (MI250X), also reproduced on gfx942/gfx950. Compiler: upstream fl
 (`llvm/llvm-project @ 119b31fd3`, built with `clang;lld;mlir;flang` + `openmp/offload/flang-rt`
 runtimes and an `amdgcn-amd-amdhsa` runtime target).
 
-**Status (2026-08-03): FIXED UPSTREAM.**
+**Status (2026-08-07): REVERTED, DEFECT OPEN AGAIN.**
+[#214278](https://github.com/llvm/llvm-project/pull/214278) reverted #211287 on 2026-08-05
+(`b9bb539fa3cd`), because it caused a null-pointer memory fault in UMT on AMD GPUs:
+`OFFLOAD ERROR: memory access fault by GPU 2 ... at virtual address (nil)` in
+`initphitotal_`. It has not relanded, so the register and occupancy numbers below describe a
+regression that is live upstream again. A corrected reland of #211287 is the fix; `alwaysinline`
+is not, see below.
+
+**Superseded status (2026-08-03): FIXED UPSTREAM.**
 [llvm/llvm-project#211287](https://github.com/llvm/llvm-project/pull/211287) was **merged by
 @shiltian 2026-08-03 14:21 UTC as
 [`4905109b00e6`](https://github.com/llvm/llvm-project/commit/4905109b00e6916a310cf7c521bd8df19c0d4a11)**,
@@ -17,7 +25,12 @@ awaiting a committer. It is an independent correctness fix rather than a fix for
 entry is complete without it. As of 2026-08-04 all 12 checks are green and the 08-03 land request
 has had no reply; nothing is actionable on it but a re-ping.
 
-The two directions have now both landed, in opposite places:
+With #211287 reverted, upstream is back to having neither fix: the `alwaysinline` workaround was
+rejected as #211136 and backed out downstream in ROCm#3485, and the analysis fix that replaced it is
+gone. Reviving `alwaysinline` is not the answer -- it is the change both trees deliberately moved
+away from, and #214278 says nothing about it.
+
+Before the revert, the two directions had both landed, in opposite places:
 [#211287](https://github.com/llvm/llvm-project/pull/211287) upstream (resolve the callback, so the
 kernel gets `MayUseNestedParallelism=0` and the inliner's last-call bonus applies) and
 [ROCm#3485](https://github.com/ROCm/llvm-project/pull/3485) downstream (stop forcing `alwaysinline`,
