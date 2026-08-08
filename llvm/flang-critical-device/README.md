@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | [llvm#214965](https://github.com/llvm/llvm-project/issues/214965) |
-| Fix | none yet; a first attempt is described below and did not work |
+| Fix | [llvm#215009](https://github.com/llvm/llvm-project/pull/215009), open |
 
 A `critical` region inside a target region does not serialize the lanes of a wavefront in flang, so
 a conforming program silently gets wrong results. The C equivalent is correct on the same GPU.
