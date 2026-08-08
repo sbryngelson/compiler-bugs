@@ -36,23 +36,31 @@ over `__kmpc_get_hardware_num_threads_in_block()` with `__kmpc_syncwarp` between
 `OpenMPIRBuilder::createCritical`, which flang reaches via `convertOmpCritical`, has no device path
 and emits the region directly, so every active lane enters at once.
 
-## A fix that does not work
+## Fix attempts so far
 
 Adding the clang-shaped turn loop to `OpenMPIRBuilder::createCritical` under
-`Config.isTargetDevice()` fixes one wavefront and not more:
+`Config.isTargetDevice()`, guarded so it only runs for the device:
 
-| threads | with the naive turn loop |
-|---|---|
-| 64 | 64, correct |
-| 128 | 68, expected 128 |
-| 256 | 202, expected 256 |
+| threads | v1, `syncwarp(-1)` | v2, `syncwarp(__kmpc_warp_active_thread_mask())` |
+|---|---|---|
+| 64 | 64, correct | 64, correct |
+| 128 | 68 | 128, correct |
+| 256 | 202 | 205 |
+| 512 | not measured | 272 |
 
-`__kmpc_syncwarp` synchronizes a wavefront, not a block, so once there is more than one wavefront
-the turn counters drift apart and updates are lost again. A correct fix needs block-wide
-synchronization, or a different structure than a straight port of the clang loop. Two further
-notes: `BasicBlock::splitBasicBlock` cannot be used here because OMPIRBuilder has not terminated
-the insertion block yet -- use the `splitBB` helper -- and clang does not normally route `critical`
-through `createCritical`, so a change there could double-wrap under
-`-fopenmp-enable-irbuilder`.
+The mask matters: clang passes the active-thread mask, and passing all-ones instead makes
+reconvergence wait on lanes that are not executing, which is what broke two wavefronts in v1.
+Fixing that makes 128 correct but 256 and above are still wrong, so something beyond the mask is
+missing above two wavefronts. `critical-fix-v2.patch` is the current state.
+
+Three notes for whoever continues:
+
+* `BasicBlock::splitBasicBlock` cannot be used here, OMPIRBuilder has not terminated the insertion
+  block yet; use the `splitBB` helper.
+* clang does not normally route `critical` through `createCritical`, so a change there could
+  double-wrap under `-fopenmp-enable-irbuilder`.
+* Verify the patch is present in the source before building, and that no other `ninja` is running
+  in the same build directory. A measurement taken against a racing build showed the unpatched
+  numbers and briefly looked like a regression.
 
 Root cause analysis and the reduced cases were produced with Claude and reviewed.
