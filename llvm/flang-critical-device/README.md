@@ -36,31 +36,68 @@ over `__kmpc_get_hardware_num_threads_in_block()` with `__kmpc_syncwarp` between
 `OpenMPIRBuilder::createCritical`, which flang reaches via `convertOmpCritical`, has no device path
 and emits the region directly, so every active lane enters at once.
 
-## Fix attempts so far
+## Fix
 
-Adding the clang-shaped turn loop to `OpenMPIRBuilder::createCritical` under
-`Config.isTargetDevice()`, guarded so it only runs for the device:
+`critical-fix-v3.patch`. `OpenMPIRBuilder::createCritical` gains a device path,
+taken when `Config.IsGPU` is set, that wraps the region in the same turn loop
+clang emits in `CGOpenMPRuntimeGPU::emitCriticalRegion`:
 
-| threads | v1, `syncwarp(-1)` | v2, `syncwarp(__kmpc_warp_active_thread_mask())` |
+```
+mask = __kmpc_warp_active_thread_mask();
+for (i = 0; i < __kmpc_get_hardware_num_threads_in_block(); ++i) {
+  if (__kmpc_get_hardware_thread_id_in_block() == i)
+    <__kmpc_critical / body / __kmpc_end_critical>
+  __kmpc_syncwarp(mask);
+}
+```
+
+Result on MI250X, all thread counts now match clang and the `atomic` control:
+
+| threads | before | after |
 |---|---|---|
-| 64 | 64, correct | 64, correct |
-| 128 | 68 | 128, correct |
-| 256 | 202 | 205 |
-| 512 | not measured | 272 |
+| 64 | 1 | 64 |
+| 128 | 2 | 128 |
+| 256 | 4 | 256 |
+| 512 | 8 | 512 |
+| 1024 | 16 | 1024 |
 
-The mask matters: clang passes the active-thread mask, and passing all-ones instead makes
-reconvergence wait on lanes that are not executing, which is what broke two wavefronts in v1.
-Fixing that makes 128 correct but 256 and above are still wrong, so something beyond the mask is
-missing above two wavefronts. `critical-fix-v2.patch` is the current state.
+Regression suites green: `LLVMFrontendTests` (1281), and
+`mlir/test/Target/LLVMIR`, `mlir/test/Dialect/OpenMP`,
+`flang/test/Lower/OpenMP`, `flang/test/Integration/OpenMP`,
+`clang/test/OpenMP` (2547 total). New test:
+`mlir/test/Target/LLVMIR/omptarget-critical-device.mlir`.
 
-Three notes for whoever continues:
+## Two wrong turns on the way
 
-* `BasicBlock::splitBasicBlock` cannot be used here, OMPIRBuilder has not terminated the insertion
-  block yet; use the `splitBB` helper.
-* clang does not normally route `critical` through `createCritical`, so a change there could
-  double-wrap under `-fopenmp-enable-irbuilder`.
-* Verify the patch is present in the source before building, and that no other `ninja` is running
-  in the same build directory. A measurement taken against a racing build showed the unpatched
-  numbers and briefly looked like a regression.
+**v1 passed an all-ones mask to `__kmpc_syncwarp`.** clang passes
+`__kmpc_warp_active_thread_mask()`. All-ones makes reconvergence wait on lanes
+that are not executing. This is what broke the second wavefront: 128 threads
+gave 68.
 
-Root cause analysis and the reduced cases were produced with Claude and reviewed.
+**v2 fixed the mask but left `__kmpc_critical` outside the loop.**
+`createCritical` builds the entry and exit calls at the current insertion point
+before the region is emitted. `EmitOMPInlinedRegion` relocates only the *exit*
+call, via `emitCommonDirectiveExit`; `emitCommonDirectiveEntry` returns
+immediately when `Conditional` is false and never moves the entry call. So the
+lock was acquired once, before the loop, and released on every turn. The
+symptom was partial serialization that got worse with more wavefronts: 256 gave
+205, 512 gave 272. The fix is one `moveBefore` into the region block.
+
+## Notes for anyone touching this
+
+* `BasicBlock::splitBasicBlock` cannot be used here, OMPIRBuilder has not
+  terminated the insertion block yet; use the `splitBB` helper.
+* Guard on `Config.IsGPU`, not `Config.isTargetDevice()`. `IsGPU` is set only
+  for AMDGPU and NVPTX, which is exactly clang's `CGOpenMPRuntimeGPU` scope, and
+  the getters assert when the optional is unset, which the OMPIRBuilder unit
+  tests do not populate. Read `Config.IsGPU.value_or(false)`.
+* `ninja bin/flang` does not rebuild `mlir-translate`. An MLIR lit run against
+  the stale binary reported green for a test that was actually failing, and
+  reported the device path as not taken when it was.
+* Verify the patch is present in the source before building, and that no other
+  `ninja` is running in the same build directory. A measurement taken against a
+  racing build showed the unpatched numbers and briefly looked like a
+  regression.
+
+Root cause analysis, the reduced cases and the fix were produced with Claude and
+reviewed.

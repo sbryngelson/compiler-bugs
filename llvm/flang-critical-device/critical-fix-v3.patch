@@ -17,19 +17,19 @@ index fee8c712998b..ebb4d8044906 100644
                                                 BodyGenCallbackTy BodyGenCB,
                                                 FinalizeCallbackTy FiniCB,
 diff --git a/llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp b/llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp
-index e19ed110adf1..fa3c27deba96 100644
+index e19ed110adf1..10c9926d89a2 100644
 --- a/llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp
 +++ b/llvm/lib/Frontend/OpenMP/OMPIRBuilder.cpp
-@@ -7877,10 +7877,94 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createCritical(
+@@ -7877,10 +7877,97 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createCritical(
        getOrCreateRuntimeFunctionPtr(OMPRTL___kmpc_end_critical);
    Instruction *ExitCall = createRuntimeFunctionCall(ExitRTLFn, Args);
  
-+  // On a target device the runtime lock is acquired by a single lane of a
-+  // wavefront, so every other lane would enter the region unsynchronized. Give
-+  // each thread of the block its own turn, as clang does in
++  // On a GPU the runtime lock is acquired by a single lane of a wavefront, so
++  // every other lane would enter the region unsynchronized. Give each thread of
++  // the block its own turn, as clang does in
 +  // CGOpenMPRuntimeGPU::emitCriticalRegion, and let the lock serialize the
 +  // wavefronts against each other.
-+  if (Config.isTargetDevice())
++  if (Config.IsGPU.value_or(false))
 +    return emitDeviceSerializedCritical(EntryCall, ExitCall, BodyGenCB, FiniCB);
 +
    return EmitOMPInlinedRegion(OMPD, EntryCall, ExitCall, BodyGenCB, FiniCB,
@@ -95,6 +95,9 @@ index e19ed110adf1..fa3c27deba96 100644
 +  Builder.SetInsertPoint(RegionBB);
 +  Builder.CreateBr(SyncBB);
 +  Builder.SetInsertPoint(RegionBB->getTerminator());
++  // EmitOMPInlinedRegion only relocates the exit call; the entry call stays
++  // where it was built, which is before the loop.
++  EntryCall->moveBefore(*RegionBB, RegionBB->getTerminator()->getIterator());
 +  InsertPointOrErrorTy AfterIP = EmitOMPInlinedRegion(
 +      Directive::OMPD_critical, EntryCall, ExitCall, BodyGenCB, FiniCB,
 +      /*Conditional*/ false, /*hasFinalize*/ true);
