@@ -29,8 +29,11 @@ Controls, all in the same construct on the same mapped variable:
 
 ## Cause
 
-`setCriticalLock` (`openmp/device/src/Synchronization.cpp`) acquires the lock only on the lowest
-active lane of a wavefront. That is sound only if one lane per wavefront reaches it.
+`setCriticalLock` (`openmp/device/src/Synchronization.cpp:109`, the AMDGPU section) acquires the
+lock only on the lowest active lane of a wavefront, so the other lanes fall through with no lock at
+all. That is sound only if one lane per wavefront reaches it. The NVPTX section at line 178 is a
+different implementation, `setCriticalLock(Lock) { setLock(Lock); }`, a plain per-thread CAS spin
+lock with no lane election, so the wrong-answer mechanism described here is AMDGPU-specific.
 `CGOpenMPRuntimeGPU::emitCriticalRegion` guarantees it for clang by wrapping the region in a loop
 over `__kmpc_get_hardware_num_threads_in_block()` with `__kmpc_syncwarp` between turns.
 `OpenMPIRBuilder::createCritical`, which flang reaches via `convertOmpCritical`, has no device path
@@ -61,6 +64,11 @@ Result on MI250X, all thread counts now match clang and the `atomic` control:
 | 512 | 8 | 512 |
 | 1024 | 16 | 1024 |
 
+Before: 3 runs each on unpatched flang. After: 10 runs each, all identical. Measured on gfx90a
+only; the change also affects NVPTX and SPIR-V, which are untested here. The 512 and 1024 "before"
+numbers were originally extrapolated from the wavefront pattern and published in the PR that way;
+they were measured afterwards and did match, but do not do that again.
+
 Regression suites green: `LLVMFrontendTests` (1281), and
 `mlir/test/Target/LLVMIR`, `mlir/test/Dialect/OpenMP`,
 `flang/test/Lower/OpenMP`, `flang/test/Integration/OpenMP`,
@@ -87,13 +95,22 @@ symptom was partial serialization that got worse with more wavefronts: 256 gave
 
 * `BasicBlock::splitBasicBlock` cannot be used here, OMPIRBuilder has not
   terminated the insertion block yet; use the `splitBB` helper.
-* Guard on `Config.IsGPU`, not `Config.isTargetDevice()`. `IsGPU` is set only
-  for AMDGPU and NVPTX, which is exactly clang's `CGOpenMPRuntimeGPU` scope, and
-  the getters assert when the optional is unset, which the OMPIRBuilder unit
-  tests do not populate. Read `Config.IsGPU.value_or(false)`.
+* Guard on `Config.IsGPU`, not `Config.isTargetDevice()`. flang sets it from
+  `Triple::isGPU()` (`CompilerInvocation.cpp:1372`), which is
+  `isSPIROrSPIRV() || isNVPTX() || isAMDGPU()`, and that matches the targets
+  clang gives `CGOpenMPRuntimeGPU` to in `CodeGenModule.cpp:685` (nvptx,
+  nvptx64, amdgpu, spirv64). The doc comment on `OpenMPIRBuilderConfig::IsGPU`
+  still says AMDGPU and NVPTX only and is out of date -- do not quote it, read
+  the code. The getters assert when the optional is unset, which the
+  OMPIRBuilder unit tests do not populate, so read
+  `Config.IsGPU.value_or(false)`.
 * `ninja bin/flang` does not rebuild `mlir-translate`. An MLIR lit run against
   the stale binary reported green for a test that was actually failing, and
-  reported the device path as not taken when it was.
+  reported the device path as not taken when it was. The same trap recurred with
+  `mlir-opt`: 28 then 1 spurious failures until it was rebuilt too.
+  `libLLVMFrontendOpenMP` feeds flang, clang, mlir-translate, mlir-opt, bbc,
+  fir-opt and tco, so rebuild every tool the suite invokes, not just the obvious
+  one.
 * Verify the patch is present in the source before building, and that no other
   `ninja` is running in the same build directory. A measurement taken against a
   racing build showed the unpatched numbers and briefly looked like a
