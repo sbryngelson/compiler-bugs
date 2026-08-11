@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | [llvm#198621](https://github.com/llvm/llvm-project/issues/198621) -- open since 2026-05-19 |
-| PR | [llvm#214263 is a different fix; this one is llvm#214073](https://github.com/llvm/llvm-project/pull/214073) |
+| PR | [llvm#214073](https://github.com/llvm/llvm-project/pull/214073), **merged 2026-08-11** (llvm#214263 is a different fix) |
 | Downstream | [ROCm#3058](https://github.com/ROCm/llvm-project/pull/3058) carries the same fix |
 
 In the one-iteration-per-thread path the index is `BId * NumThreads + TId`, so `NumThreads` has to
