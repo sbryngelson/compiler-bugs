@@ -39,13 +39,14 @@ the AFAR-vs-upstream divergence as evidence that leaving it to heuristics is fra
 
 ### tblah, resolved
 
-* Constant-bounds verifier at the MLIR level. flang emits the trip count as a computed value even
+* Constant-bounds verifier at the MLIR level. flang emitted the trip count as a computed value even
   for `do i = 1, 100` (`%14 = arith.select %13, %c0_i32, %12`), so
-  `matchPattern(tripCount, m_Constant())` rejects flang's own output, and a fold-aware verifier is
+  `matchPattern(tripCount, m_Constant())` rejected flang's own output, and a fold-aware verifier is
   not possible because MLIR folding mutates IR, which a verifier may not do. tblah decided against
-  a cleverer verifier and instead folds the trip count in flang, in
-  [llvm#215238](https://github.com/llvm/llvm-project/pull/215238) (open). The verifier can be added
-  on top once that lands.
+  a cleverer verifier and folded the trip count in flang instead, in
+  [llvm#215238](https://github.com/llvm/llvm-project/pull/215238), **merged 2026-08-10**
+  (`e4293ab25404`). The verifier was then added on top in `e7c6eec5b7e7`, with negative tests in
+  `mlir/test/Dialect/OpenMP/invalid-unroll.mlir`.
 * A lowering test combining `unroll full` with `tile`: **not possible**, the composition is broken
   for all three unroll forms, including the two that predate this PR. A `TODO` was added so the
   nested construct is diagnosed rather than silently dropped. See
@@ -54,7 +55,7 @@ the AFAR-vs-upstream divergence as evidence that leaving it to heuristics is fra
   threads sat unanswered until replied to inline. This is the same mistake recorded in
   `../../amd/openmp-outlined-not-inlined/README.md`, repeated two days later.
 
-### Saieiei, 2026-08-10, CHANGES_REQUESTED
+### Saieiei, 2026-08-10, both concerns withdrawn 2026-08-11
 
 **Check the folded trip count instead of each bound.** The OpenMP restriction is on the iteration
 count, so `do i = m, m` has a trip count of one whatever `m` is, and the per-bound check rejects it.
@@ -68,14 +69,15 @@ not change which programs are accepted**, and this was measured rather than assu
 * clang rejects the equivalent C: `for (int i = m; i <= m; ++i)` under `#pragma omp unroll full`
   gives `error: loop to be fully unrolled must have a constant trip count`. So accepting it in
   flang would **diverge** from clang, not align with it.
-* The folded form needs a guard the per-bound form did not: a constant zero step makes the folder
-  divide by zero. `size(a(1:10:0))` emits `warning: INTEGER(8) division by zero
+* The folded form would need a guard the per-bound form does not: a constant zero step makes the
+  folder divide by zero. `size(a(1:10:0))` emits `warning: INTEGER(8) division by zero
   [-Wfolding-exception]` on top of the existing `-Wzero-do-step` warning.
 
-Net: more code, one new special case, zero behavior change today. Worth keeping only as a more
-faithful statement of the rule that would benefit for free if the folder ever learns identities;
-if kept, say plainly in the PR that it is a no-op.
+The check was left as-is and the reasoning posted inline; Saieiei withdrew the concern.
 
-**Strengthen the nested-loop metadata test.** `openmp-unroll-full02.mlir` only proves that *some*
-loop carries `llvm.loop.unroll.full`; it would still pass if the metadata were attached to the
-outer loop. Pin it to the inner loop's backedge and add a negative check on the outer. Open.
+**Strengthen the nested-loop metadata test.** `openmp-unroll-full02.mlir` only proved that *some*
+loop carried `llvm.loop.unroll.full`. Fixed in `c9d94db`: the checks key off the two trip counts
+and the store to tell the loops apart, require the metadata on the inner backedge, and anchor the
+outer backedge's `br` at end of line so stray metadata there fails. **Verified by moving
+`omp.unroll_full` to the outer loop: the old test still passed, the new one fails.** Changing a
+test to be stricter is worth nothing until you have seen it fail on the thing it now catches.
