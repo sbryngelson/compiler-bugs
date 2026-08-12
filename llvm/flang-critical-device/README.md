@@ -16,6 +16,8 @@ controls sit next to the failure.
 | 64 | 1 | 1 | 64 |
 | 128 | 2 | 2 | 128 |
 | 256 | 4 | 4 | 256 |
+| 512 | 8 | 8 | 512 |
+| 1024 | 16 | 16 | 1024 |
 
 The count is the number of wavefronts. Reproduces on upstream flang 24.0.0git and on amdflang from
 AFAR 22.2.0, 23.1.0, 23.2.0 and 23.2.1; C is correct on all of them.
