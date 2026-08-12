@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | [llvm#214114](https://github.com/llvm/llvm-project/issues/214114) |
-| PR | [llvm#214115](https://github.com/llvm/llvm-project/pull/214115) |
+| PR | [llvm#214115](https://github.com/llvm/llvm-project/pull/214115), **merged 2026-08-12** (`9a78a6fd4338`) |
 
 `!$omp unroll full` was parsed and then aborted in lowering with
 `not yet implemented: Unhandled clause FULL in UNROLL construct`. `partial` had landed in
