@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | [llvm#212785](https://github.com/llvm/llvm-project/issues/212785) |
-| PR | [llvm#214054](https://github.com/llvm/llvm-project/pull/214054) |
+| PR | [llvm#214054](https://github.com/llvm/llvm-project/pull/214054), **merged 2026-08-12** (`2ea42bcc3192`) |
 
 `MachineBasicBlock::printName` wrote the IR block name after `bb.<N>.` unquoted, and the MIR lexer
 read it back with `isIdentifierChar` only. A name containing a comma -- routine in Fortran-generated
