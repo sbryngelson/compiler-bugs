@@ -355,3 +355,20 @@ result:
   tree (11 days older) failed to build with `no type named 'ClauseSet' in namespace 'llvm::omp'` --
   the same worktree-drift trap already recorded in `../openmp-outlined-not-inlined/README.md`.
   Apply the hunk at the local base instead of copying the file.
+
+## Closed 2026-08-13
+
+Verified fixed on main `254e1671845f`: all four reproducers, 20 compiles each, host and device,
+zero crashes. Every `allocate` case now stops at `not yet implemented: Unhandled clause allocate in
+omp.wsloop operation`; the `private(t)`-only control compiles.
+
+| reproducer | before | now |
+|---|---|---|
+| `private(t) allocate(t)` | 16/20 crash | 0/20, TODO diagnostic |
+| `allocate(t)` alone | 20/20 crash | 0/20, TODO diagnostic |
+| `private(t)` only | 0/20 | 0/20, compiles |
+
+The crash is gone; the `allocate` clause is still unimplemented in lowering, which is a separate
+matter. All variants were run rather than just one, because the original failure was
+non-deterministic and the three forms had different rates.
+

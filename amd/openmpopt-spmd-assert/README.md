@@ -45,3 +45,26 @@ Fires with and without `-debug-info-kind=standalone`, and whether or not the sub
 ## Reproducer
 
 `repro.f90` — build per the comment at the top.
+
+## Still live on 2026-08-13
+
+Reproduces unchanged on main `254e1671845f`, assertions build, at both `-O1` and `-O2`.
+
+**The driver path does not reach it.** `flang -fopenmp --offload-arch=gfx90a -c repro.f90` compiles
+cleanly at every optimisation level, so a clean exit through the driver is **not** evidence the bug
+is gone. Only the `-fc1` invocation in the reproducer header triggers it:
+
+```
+flang -fc1 -emit-llvm -fopenmp -fopenmp-is-target-device \
+      -triple amdgcn-amd-amdhsa -O1 -o - repro.f90
+```
+
+I concluded this was fixed off a clean driver run and was wrong; the recheck with the documented
+invocation aborted immediately. Noted upstream in
+[the issue](https://github.com/llvm/llvm-project/issues/211423#issuecomment-5283914570).
+
+**General lesson: when re-testing a crash, reproduce it with the invocation the report specifies,
+not a convenient equivalent.** A different driver path can skip the pass entirely. This is the same
+shape as the vacuous-test problem in `../../llvm/mir-bb-name-quoting/README.md`: a test or a check
+that passes for the wrong reason tells you nothing.
+
