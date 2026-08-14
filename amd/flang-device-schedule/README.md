@@ -57,9 +57,7 @@ Measured on gfx90a by calling `__kmpc_distribute_for_static_loop_4u` directly, 3
 | 32 | 4 | **21 of 32 never run** |
 
 With both lines fixed, `block_chunk=0 thread_chunk=4` gives exactly `0 0 0 0 1 1 1 1 ... 7 7 7 7`,
-nothing missing, and the no-chunk default is bit-for-bit unchanged. Fix:
-[llvm#216117](https://github.com/llvm/llvm-project/pull/216117). The frontend plumbing has to land
-**after** it, otherwise it turns a wrong mapping into dropped iterations.
+nothing missing, and the no-chunk default is bit-for-bit unchanged. Fix: [llvm#216117](https://github.com/llvm/llvm-project/pull/216117), which now carries both halves.
 
 Two further hazards in the same helper, not fixed there:
 
@@ -90,3 +88,36 @@ chunk arguments are always zero. 252 chunked probes passed while never entering 
 `schedule(dynamic)` collapsing to static is clear in the IR, but no runtime difference was
 demonstrated: on a deliberately load-imbalanced loop, clang's `dynamic` was no faster than its
 `static` on this GPU. The chunk being ignored is the part that is observable.
+
+## Both halves, verified end to end 2026-08-14
+
+The runtime fix alone is unreachable. flang emits a literal `0` for the chunk, confirmed in device IR:
+
+```
+call void @__kmpc_for_static_loop_4u(..., i32 %omp_loop.tripcount, i32 %11, i32 0, i8 0)
+```
+
+so no frontend can enter the chunked path, and a runtime-only patch fixes something no user can hit.
+That was jdoerfert's objection on llvm#216117 and it was correct. The frontend forwarding was folded
+into the same PR, giving a source-level reproducer:
+
+```fortran
+!$omp target teams distribute parallel do num_teams(1) thread_limit(8) &
+!$omp&        num_threads(8) schedule(static,4) map(tofrom:tid)
+```
+
+| | mapping | misplaced |
+|---|---|---|
+| expected | `0 0 0 0 1 1 1 1 ... 7 7 7 7` | - |
+| before | `0 1 2 3 4 5 6 7 0 1 2 3 ...` | 28 of 32 |
+| after | `0 0 0 0 1 1 1 1 ... 7 7 7 7` | 0 |
+
+**Only the distribute-for entry gets a chunk.** `target teams distribute parallel do` lowers to
+`__kmpc_distribute_for_static_loop`; plain `target parallel do` lowers to `__kmpc_for_static_loop`,
+whose chunked path passes a zero block chunk and never terminates. Forwarding a chunk there would
+hang rather than fix, so the reproducer must use the distribute form. `NoLoop` is also dropped when
+a chunk is present, since the chunked path returns after one iteration when it is set.
+
+`dynamic` and `guided` still map to the static entry, so llvm#214303 is only partly fixed. The PR
+says "Partially fixes" rather than "Fixes" so it will not auto-close.
+
