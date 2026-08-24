@@ -1,6 +1,6 @@
 # attributor-pi-access-cap
 
-Downstream: [ROCm#4070](https://github.com/ROCm/llvm-project/issues/4070). AFAR 23.2.0/23.2.1 (ROCm/llvm-project `35849413f758`), gfx90a. Found 2026-08-22 in MFC, root-caused 2026-08-24.
+Downstream: [ROCm#4070](https://github.com/ROCm/llvm-project/issues/4070), fix PR [ROCm#4094](https://github.com/ROCm/llvm-project/pull/4094). AFAR 23.2.0/23.2.1 (ROCm/llvm-project `35849413f758`), gfx90a. Found 2026-08-22 in MFC, root-caused 2026-08-24.
 
 ## Symptom
 
@@ -27,7 +27,7 @@ Both modules also emit `Attributor did not reach a fixpoint after 256 iterations
 
 ## Fix and workaround
 
-`aapointerinfo-per-scope-cap.patch` counts the cap per accessing function instead of per object, with a 64x absolute ceiling as memory backstop; `pointer-info-access-cap.ll` is the lit test. Validated at `35849413f758`: bad module `structArg` 22470→0, dead LDS slot removed from all kernel structs, residual capping only on genuinely dense single-function cases (llvm-libc `slab_cache`, Fortran runtime `ShallowCopy`), pipeline time ~2x default.
+`aapointerinfo-per-scope-cap.patch` counts the cap per accessing function instead of per object, with a 64x absolute ceiling as memory backstop; `pointer-info-access-cap.ll` is the lit test. Validated at `35849413f758`, and again at the `amd-staging` tip `a830b4135bfc` where the bug is still live (8670 marshalling allocas and 515 dead LDS slots unpatched, both 0 with the patch; the lit test fails unpatched and passes patched): bad module `structArg` 22470→0, dead LDS slot removed from all kernel structs, residual capping only on genuinely dense single-function cases (llvm-libc `slab_cache`, Fortran runtime `ShallowCopy`), pipeline time ~2x default.
 
 Production workaround: link with `-Xoffload-linker -mllvm -Xoffload-linker -attributor-max-pi-accesses=16384` (~4x device-link time, good codegen restored).
 
