@@ -1,0 +1,38 @@
+--- a/llvm/lib/Transforms/IPO/AttributorAttributes.cpp
++++ b/llvm/lib/Transforms/IPO/AttributorAttributes.cpp
+@@ -937,14 +937,26 @@
+ private:
+   /// State to track fixpoint and validity.
+   BooleanState BS;
++
++  /// Number of tracked accesses per accessing function, for the per-scope cap.
++  DenseMap<const Function *, unsigned> PerScopeAccesses;
+ };
+ 
+ ChangeStatus AA::PointerInfo::State::addAccess(
+     Attributor &A, const AAPointerInfo::RangeList &Ranges, Instruction &I,
+     std::optional<Value *> Content, AAPointerInfo::AccessKind Kind, Type *Ty,
+     Instruction *RemoteI) {
++  // Cap the number of tracked accesses per accessing function rather than in
++  // total: interference reasoning is scoped, so many functions contributing a
++  // few accesses each (e.g., every kernel in a large OpenMP device image
++  // touching a DeviceRTL state object once) is benign and must stay precise,
++  // while a single function with a huge access list remains the pathological
++  // case this cap exists for. Keep a large absolute ceiling as a memory
++  // backstop.
++  const Function *AccScope = I.getFunction();
+   if (MaxAccessesPerAAPointerInfo > 0 &&
+-      AccessList.size() >= MaxAccessesPerAAPointerInfo)
++      (PerScopeAccesses.lookup(AccScope) >= MaxAccessesPerAAPointerInfo ||
++       AccessList.size() >= 64 * MaxAccessesPerAAPointerInfo))
+     return indicatePessimisticFixpoint();
+ 
+   RemoteI = RemoteI ? RemoteI : &I;
+@@ -978,6 +990,7 @@
+            "New Access should have been at AccIndex");
+     LocalList.push_back(AccIndex);
+     AddToBins(AccessList[AccIndex].getRanges());
++    ++PerScopeAccesses[AccScope];
+     return ChangeStatus::CHANGED;
+   }
+ 
