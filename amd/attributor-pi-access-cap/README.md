@@ -16,7 +16,7 @@ Three independent measurements agree on the cliff: cap default 512; minimal trig
 
 ## Reproducer
 
-No minimal source reproducer can exist (the trigger is total image kernel count). `fast.internalize.bc.gz` / `slow.internalize.bc.gz` are the merged device-LTO modules (post-internalize) captured from the real MFC link with `-Xoffload-linker --save-temps`; the source trees differ only by 7 added target regions in `src/simulation/m_amr.fpp` (MFC `up/mega`, `e53db278` vs `a7970743`), and the device IR of all other files is bit-identical.
+No minimal source reproducer was found; see SYNTHETIC-ATTEMPT.md for the designs tried and why they do not trip the cap. The trigger is the accumulated access count on one object, which needs real call structure, not kernel count as such. `fast.internalize.bc.gz` / `slow.internalize.bc.gz` are the merged device-LTO modules (post-internalize) captured from the real MFC link with `-Xoffload-linker --save-temps`; the source trees differ only by 7 added target regions in `src/simulation/m_amr.fpp` (MFC `up/mega`, `e53db278` vs `a7970743`), and the device IR of all other files is bit-identical.
 
 ```
 opt -passes='lto<O3>' fast.internalize.bc -o out.bc   # 0 structArg allocas remain
