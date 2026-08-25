@@ -68,3 +68,34 @@ not a convenient equivalent.** A different driver path can skip the pass entirel
 shape as the vacuous-test problem in `../../llvm/mir-bb-name-quoting/README.md`: a test or a check
 that passes for the wrong reason tells you nothing.
 
+## Not a bug: closed 2026-08-25
+
+skatrak: the `-fc1` invocation in the report is incomplete. Device compilation needs
+`-fopenmp-host-ir-file-path` pointing at host bitcode; that is where the offload entries are
+identified, and without it the kernel function never gets the `"kernel"` attribute that
+`omp::isOpenMPKernel` checks (it is just `Fn.hasFnAttribute("kernel")`).
+
+```
+flang -fc1 -emit-llvm-bc -fopenmp --offload-targets=amdgcn-amd-amdhsa -O1 -o host.bc repro.f90
+flang -fc1 -emit-llvm -fopenmp -fopenmp-is-target-device -fopenmp-host-ir-file-path host.bc \
+      -triple amdgcn-amd-amdhsa -O1 -o - repro.f90
+```
+
+| invocation | -O1 | -O2 |
+|---|---|---|
+| with `-fopenmp-host-ir-file-path` | clean | clean |
+| without | assert | assert |
+
+**The earlier note in this entry was wrong and is retracted.** It said the driver path compiling
+cleanly was a trap, and that only `-fc1` reproduced the real bug. Backwards: the driver builds the
+host bitcode first and passes it, so the driver is the *correct* invocation and the report's `-fc1`
+line was the broken one. Generalising "reproduce it the way the report says" was the wrong lesson;
+the right one is **check that the reported invocation is complete before trusting it**, especially
+for a `-fc1` command line, where the driver normally supplies flags by hand.
+
+Root-causing the mechanism first was still what made this quick to confirm: knowing the assert
+reduces to a missing function attribute meant skatrak's diagnosis could be checked in two commands.
+Also noted along the way: the assert at `OpenMPOpt.cpp:4332` sits eight lines above the
+already-SPMD early-out, and flang kernels arrive with exec mode 2 (SPMD), so on this path it would
+have returned immediately anyway.
+
