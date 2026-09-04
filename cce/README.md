@@ -46,7 +46,7 @@ scratch** and a **61% slowdown** on MFC's IGR solver. Three lines of upstream co
 | [private-flat-pointer](private-flat-pointer) | Fortran front end | private→flat via `ptrtoint`/`zext`/`inttoptr` drops the scratch aperture, so offset 0 is indistinguishable from null. **LLVM is correct here** |
 | [explicit-shape-dummy-lost-writes](explicit-shape-dummy-lost-writes) | Fortran front end | no extent emitted for an explicit-shape dummy → 0-byte map → runtime returns the host pointer |
 | [inlinenever-ignored-device](inlinenever-ignored-device) | Fortran front end | `!DIR$ INLINENEVER` accepted, then emitted with `alwaysinline` |
-| [acc-routine-element-by-reference](acc-routine-element-by-reference) | Fortran front end / OpenACC lowering | an element of a `declare create` array or an attached field passed by reference into a non-inlined `routine seq` is misaddressed: reads garbage, writes lost. **CCE 19.0.0, 20.x and 21.0.2**, `-hacc`; scalars are exact |
+| [acc-routine-element-by-reference](acc-routine-element-by-reference) | Fortran front end / OpenACC lowering | `!$acc loop seq` inside a `routine seq` + an array element as the actual argument: reads garbage, writes lost; either alone is fine. Bisected to one line. **CCE 19.0.0 through 21.0.2**, `-hacc -O2` (`-O0`/`-O1` correct) |
 
 ### Belongs upstream, not to HPE
 

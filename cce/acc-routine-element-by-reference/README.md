@@ -1,8 +1,8 @@
-# CCE 19 OpenACC: a device-array element passed by reference into a non-inlined `routine seq` is read as garbage and never written
+# CCE OpenACC: an `acc loop seq` inside a `routine seq` makes an array-element actual argument read as garbage and never be written
 
 > **Severity:** **Silent wrong answers** — reads through the argument return garbage, writes through it are lost  
-> **Fix belongs to:** CCE Fortran front end / OpenACC lowering (address materialization at a device-routine call boundary)  
-> **Status:** Reproduced standalone in both directions; workaround applied in the application
+> **Fix belongs to:** CCE optimizer (`-O2`; `-O0` and `-O1` are correct)  
+> **Status:** **Bisected to one line.** `!$acc loop seq` inside an `!$acc routine seq`, plus an array element as the routine's actual argument; either alone is fine. Workaround applied in the application
 
 **Wrong answers, no diagnostic, no crash.** Inside an `!$acc parallel loop`, a call to an
 `!$acc routine seq` subroutine whose actual argument is an **element of a device-resident
@@ -29,6 +29,57 @@ equation-of-state paths ended in `NaN(s) in timestep output` on the Frontier CCE
 lanes only. An in-situ check recomputed one kernel's output on the host from the same
 fields: device 0.0 in 300 of 300 cells, host 1.4.
 
+## The one-line trigger
+
+`min/loopseq_bug.f90` (37 lines, one module, one routine, no derived types):
+
+```fortran
+subroutine inner(x, y)
+  !$acc routine seq
+  real(wp), intent(in)  :: x
+  real(wp), intent(out) :: y
+  integer :: it
+  y = x
+  !$acc loop seq          ! <-- delete this one line and the result is correct
+  do it = 1, 8
+    y = y + 1.0_wp
+  end do
+end subroutine
+...
+!$acc parallel loop
+do k = 0, n
+  call inner(real(k, wp), b(k))     ! array element as the intent(out) actual argument
+end do
+```
+
+`bad 300 of 300, got 0.0, expected 8.0`: the store to `y` is discarded entirely.
+
+The bisection ladder from the full reproducer above (each row removes one thing from an
+otherwise failing program):
+
+| removed | still fails? |
+|---|---|
+| derived type `q%vf(i)%sf` / pointer components | yes |
+| `collapse(3)`, 3-D arrays | yes |
+| the state-dependent branch, `select case`, `exp()` | yes |
+| module allocatables → parameters | yes |
+| 3-level call chain → 2 → 1 | yes |
+| the `!$acc loop seq` directive | **no — passes** |
+| the whole iteration loop | **no — passes** |
+
+And the controls: an array element as the actual argument of a routine *without* a loop passes;
+a routine with the loop called with a scalar, whose value is then stored, passes (this is the
+workaround). So the element argument alone is not the defect, and neither is the directive
+alone.
+
+* `-O2` wrong; `-O0` and `-O1` correct. Independent of `acc_model=auto_async_none` /
+  `no_fast_addr`; plain `-hacc -O2` is enough.
+* Not a regression: CCE 19.0.0, 20.0.0, 20.0.2, 21.0.0, 21.0.2 all fail (18.0.1 does not build
+  the accelerator target here). ROCm 6.4.2 and 7.13.0 both.
+* `!$acc loop` inside a `routine seq` is dubious OpenACC to begin with: a `seq` routine
+  generates no parallelism, so the directive should be a no-op. The defect is that CCE accepts
+  it without a diagnostic and then drops the store instead of ignoring the directive.
+
 ## Tracking
 
 | Where | Link / ID |
@@ -47,6 +98,7 @@ fields: device 0.0 in 300 of 300 cells, host 1.4.
 | `main.f90` | Maps everything exactly as MFC does (`enter data copyin` of the derived type, its component array, each element and each pointed-to field; `declare create` **and** `enter data create` for the module array), checks that a plain kernel store round-trips, then runs the five kernels against a host reference. Self-checking, NaN-safe. |
 | `build_and_run.sh` | Guarded build with MFC's flags, three separate compilations, then the run. |
 | `results/run-cce19-login-node.txt` | The measured output quoted below. |
+| `min/loopseq_bug.f90` | **The minimal case.** One routine, one loop directive, one array-element argument. |
 
 ## The kernel of it
 
@@ -111,10 +163,8 @@ running inside MFC on Frontier:
 * Not the mapping: the module array here is both `declare create` and `enter data create`,
   as in MFC, and a plain store into it from a kernel round-trips.
 
-What is left is the address handed to the callee for an array element when the call is
-real. Elements of `enter data` *local* allocatables passed the same way were correct in the
-in-application probe, so the affected cases are the `declare create` module array and the
-attached pointer field; the reproducer covers the second as inputs and the first as output.
+The bisection above supersedes the address-materialization reading: the element argument is
+necessary but not sufficient, and the `loop seq` directive inside the routine is the other half.
 
 ## Workaround
 
