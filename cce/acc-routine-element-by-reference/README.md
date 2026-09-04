@@ -38,6 +38,7 @@ it must work. Neither happens.
   ([`results/run-minimal-version-sweep.txt`](results/run-minimal-version-sweep.txt)).
   Not a regression. The OpenMP-offload build of the same application source is correct,
   as are amdflang and nvfortran.
+* **Hardware:** identical on an MI250X compute node and an MI210 login node (both gfx90a).
 * **All four routine levels** are affected — `seq`, `vector`, `worker`, `gang` — with the
   same signature.
 * **OpenACC only.** The same shape written in OpenMP (`-homp`) is correct: a `declare
@@ -59,7 +60,7 @@ fields: device 0.0 in 300 of 300 cells, host 1.4.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | not yet filed |
+| Vendor | not yet filed — a ready-to-send report is in [`VENDOR-REPORT.md`](VENDOR-REPORT.md) (paste into an OLCF ticket; OLCF opens the HPE/Cray case) |
 | MFC issue | [MFlowCode/MFC#1815](https://github.com/MFlowCode/MFC/issues/1815) |
 | MFC fix | [MFlowCode/MFC#1811](https://github.com/MFlowCode/MFC/pull/1811), commit `1ee119b9`: scalars in, scalar out at every device-routine call; rule recorded in `.claude/rules/common-pitfalls.md` |
 | Related | [`../explicit-shape-dummy-lost-writes`](../explicit-shape-dummy-lost-writes) — also a wrong address handed across a routine boundary, there through a 0-byte map under OpenMP |
@@ -81,7 +82,9 @@ fields: device 0.0 in 300 of 300 cells, host 1.4.
 | `minimal/control_scalar_arg.f90` | `element_out.f90` with the directive kept and a scalar actual argument. Correct — this is the workaround. |
 | `minimal/control_openmp.f90` | The same shape in OpenMP (`-homp`). Correct, so the defect is specific to OpenACC lowering. |
 | `minimal/run.sh` | Builds all five, checks each against its documented outcome, then sweeps `-O0..-O3`. |
-| `results/run-minimal-cce21.txt`, `results/run-minimal-version-sweep.txt` | Measured output of the above. |
+| `results/run-minimal-cce21.txt`, `results/run-minimal-version-sweep.txt` | Measured output of the above, login node. |
+| `results/run-minimal-compute-node-mi250x.txt` | The same seven cases on a Frontier **MI250X compute node** — identical, so this is not a login-node artefact. |
+| `VENDOR-REPORT.md` | Self-contained report for OLCF/HPE, reproducer inline. |
 
 ## The minimal case
 

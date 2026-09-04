@@ -1,0 +1,14 @@
+# Frontier COMPUTE node (MI250X, gfx90a), CCE 21.0.2 / cpe 26.03 / ROCm 7.2.0.
+# srun -A CFD154 -N1 -n1 -c7 --gpus=1; OpenACC cases -hacc -O2, control_openmp -homp -O2.
+# Identical to the login-node MI210 measurement.
+
+=== compute node (MI250X) ===
+GPU[0]		: Card Series: 		AMD Instinct MI250X
+element out : bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
+element in  : bad 300 of 300   got           NaN   expected  8.000000E+00
+dtype in    : bad 300 of 300   got           NaN   expected  8.000000E+00
+legal vector: bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
+no loop     : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+scalar arg  : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+openmp      : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+
