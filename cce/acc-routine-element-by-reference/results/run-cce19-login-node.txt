@@ -1,0 +1,14 @@
+# Frontier login node, CCE 19.0.0 (cpe/25.03), ROCm 6.3.1, gfx90a
+# F="-hacc -h acc_model=auto_async_none -h acc_model=no_fast_addr -O2"
+# ftn $F -c m_eos.f90 && ftn $F -c m_rhs.f90 && ftn $F main.f90 m_eos.o m_rhs.o -o repro && ./repro
+#
+# Run 1: the comparison in main.f90 was still NaN-blind (abs(x-ref) > tol is false for NaN), so
+# "elements in, scalar out" reported 0 bad while printing NaN for cell 0. The count is fixed in the
+# committed main.f90; the printed values are what matter.
+devices:   1
+sanity store:      bad     0 of   300
+element, type index:  bad   300 of   300  0.000000E+00  2.438493E+00
+element, const index: bad   300 of   300  0.000000E+00  2.438493E+00
+elements in, scalar out: bad     0 of   300           NaN  2.438493E+00
+scalars in, element out: bad   300 of   300  0.000000E+00  2.438493E+00
+scalar:               bad     0 of   300  2.438493E+00  2.438493E+00
