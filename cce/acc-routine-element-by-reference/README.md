@@ -293,6 +293,16 @@ Added by the minimization, and these are the ones that identify it:
   the `!$acc routine seq` *and* passes an array element to it is wrong; every configuration
   missing either one is right.
 
+## `-Oipa0` masks it
+
+Measured inside MFC on the pre-fix code, one build: the identical call
+(`s_phase_bulk_modulus(..., blkmod(k))`, element out, callee chain carrying the loop) gave
+**0 mismatches in 100 000 lanes** from a kernel in `m_start_up.fpp`, which MFC compiles with
+`-Oipa0` to sidestep a CCE IPA crash, and **300 of 300 wrong** from the real kernel in
+`m_rhs.fpp` at default IPA. So in the application the pair only bites once IPA inlines the
+loop-bearing routine into the caller; consistent with `-O0`/`-O1` being correct. It is a mask,
+not a fix: the directive is still miscompiled wherever inlining happens.
+
 ## Workaround
 
 Copy the element to a scalar before the call and receive the result into a scalar. It is a
