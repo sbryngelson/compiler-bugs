@@ -2,7 +2,7 @@
 
 > **Severity:** **Silent wrong answers** — reads through the argument return garbage, writes through it are lost
 > **Fix belongs to:** CCE Fortran front end / OpenACC lowering
-> **Status:** Root cause isolated to a single directive; 37-line reproducer in [`minimal/`](minimal); workaround applied in the application
+> **Status:** Filed with OLCF/HPE 2026-09-03; root cause isolated to a single directive and traced to the loop-elimination step in `optcg`; 37-line reproducer in [`minimal/`](minimal); workaround applied in the application
 
 **Wrong answers, no diagnostic, no crash.** An `!$acc routine seq` that contains an
 `!$acc loop` mis-passes any **array element** given to it as an actual argument. An
@@ -60,7 +60,7 @@ fields: device 0.0 in 300 of 300 cells, host 1.4.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | not yet filed — a ready-to-send report is in [`VENDOR-REPORT.md`](VENDOR-REPORT.md) (paste into an OLCF ticket; OLCF opens the HPE/Cray case) |
+| Vendor | Filed with OLCF/HPE 2026-09-03 — case ID pending; report as sent is [`VENDOR-REPORT.md`](VENDOR-REPORT.md) |
 | MFC issue | [MFlowCode/MFC#1815](https://github.com/MFlowCode/MFC/issues/1815) |
 | MFC fix | [MFlowCode/MFC#1811](https://github.com/MFlowCode/MFC/pull/1811), commit `1ee119b9`: scalars in, scalar out at every device-routine call; rule recorded in `.claude/rules/common-pitfalls.md` |
 | Related | [`../explicit-shape-dummy-lost-writes`](../explicit-shape-dummy-lost-writes) — also a wrong address handed across a routine boundary, there through a 0-byte map under OpenMP |
