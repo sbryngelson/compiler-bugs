@@ -19,9 +19,10 @@ graph exposed it.
 
 * **Component:** CCE Fortran, OpenACC (`-hacc`), gfx90a
 * **Severity:** silent miscompilation — wrong numerical results
-* **Affected:** CCE **19.0.0** (cpe/25.03, ROCm 6.3.1). The OpenMP-offload build of the same
-  application source is correct, as are amdflang and nvfortran.
-* **Not yet checked:** CCE 21.0.2; `-homp` on this exact reproducer.
+* **Affected:** CCE **19.0.0** (cpe/25.03, ROCm 6.3.1), **20.x** and **21.0.2** — identical
+  signature on all three. The OpenMP-offload build of the same application source is correct,
+  as are amdflang and nvfortran.
+* **Not yet checked:** `-homp` on this exact reproducer.
 
 Found in MFC (<https://github.com/MFlowCode/MFC>): every regression test on the new
 equation-of-state paths ended in `NaN(s) in timestep output` on the Frontier CCE OpenACC
@@ -78,7 +79,7 @@ module swap cce cce/19.0.0
 ./build_and_run.sh
 ```
 
-### Measured — CCE 19.0.0 / ROCm 6.3.1, gfx90a, Frontier login node
+### Measured — CCE 19.0.0 / ROCm 6.3.1, gfx90a, Frontier login node (CCE 20 and 21.0.2: same output)
 
 ```
 sanity store:      bad     0 of   300                       <- a plain kernel store round-trips
@@ -92,6 +93,10 @@ scalar:               bad     0 of   300  2.438493E+00  2.438493E+00   <- the co
 The two numbers on each line are the device's `blkmod(0)` and the host reference. Outputs
 written through an element argument stay at the 0.0 they were initialized to; inputs read
 through one give NaN.
+
+The build prints `ftn-7255` for `main.f90` line 28: that is the **host** reference loop that
+calls `bulk_modulus` (an `acc routine`) to compute `ref`; CCE notes the routine's
+directive is ignored on the host. Harmless, and not part of what is being measured.
 
 ## What the mechanism is *not*
 

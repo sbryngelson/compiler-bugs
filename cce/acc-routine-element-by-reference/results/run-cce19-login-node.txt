@@ -12,3 +12,12 @@ element, const index: bad   300 of   300  0.000000E+00  2.438493E+00
 elements in, scalar out: bad     0 of   300           NaN  2.438493E+00
 scalars in, element out: bad   300 of   300  0.000000E+00  2.438493E+00
 scalar:               bad     0 of   300  2.438493E+00  2.438493E+00
+
+# CCE 20.x and CCE 21.0.2, same node, same flags: identical signature (labels re-aligned by hand)
+devices:   1
+sanity store:            bad     0 of   300
+element, type index:     bad   300 of   300  0.000000E+00  2.438493E+00
+element, const index:    bad   300 of   300  0.000000E+00  2.438493E+00
+elements in, scalar out: bad     0 of   300           NaN  2.438493E+00
+scalars in, element out: bad   300 of   300  0.000000E+00  2.438493E+00
+scalar:                  bad     0 of   300  2.438493E+00  2.438493E+00
