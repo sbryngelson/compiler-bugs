@@ -1,31 +1,39 @@
-# Minimal reproducer (minimal/run.sh), Frontier gfx90a login node, -hacc -O2.
-# Each line: <case> bad <wrong>/300, then device value and host reference.
+# Minimal reproducer (minimal/run.sh), Frontier gfx90a login node.
+# OpenACC cases built -hacc -O2; control_openmp built -homp -O2.
 
 == cce/19.0.0  cpe/25.03  rocm/6.3.1
    element out : bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    element in  : bad 300 of 300   got           NaN   expected  8.000000E+00
    dtype in    : bad 300 of 300   got           NaN   expected  8.000000E+00
+   legal vector: bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    no loop     : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
    scalar arg  : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+   openmp      : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
 
 == cce/20.0.2  cpe/25.09  rocm/6.4.2
    element out : bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    element in  : bad 300 of 300   got           NaN   expected  8.000000E+00
    dtype in    : bad 300 of 300   got           NaN   expected  8.000000E+00
+   legal vector: bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    no loop     : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
    scalar arg  : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+   openmp      : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
 
 == cce/21.0.0  cpe/26.03  rocm/7.2.0
    element out : bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    element in  : bad 300 of 300   got           NaN   expected  8.000000E+00
    dtype in    : bad 300 of 300   got           NaN   expected  8.000000E+00
+   legal vector: bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    no loop     : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
    scalar arg  : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+   openmp      : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
 
 == cce/21.0.2  cpe/26.03  rocm/7.2.0
    element out : bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    element in  : bad 300 of 300   got           NaN   expected  8.000000E+00
    dtype in    : bad 300 of 300   got           NaN   expected  8.000000E+00
+   legal vector: bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
    no loop     : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
    scalar arg  : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+   openmp      : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
 
