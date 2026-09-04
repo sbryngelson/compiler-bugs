@@ -1,0 +1,15 @@
+# Does disabling CCE's inliner avoid the defect? Yes -- for both reproducers.
+# CCE 21.0.2 / cpe 26.03 / rocm 7.2.0, Frontier.
+
+minimal/element_out.f90
+  -hacc -O2            element out : bad 300 of 300   got 0.000000E+00   expected 8.000000E+00
+  -hacc -O2 -hipa0     element out : bad   0 of 300   got 8.000000E+00   expected 8.000000E+00
+
+application-shaped repro (m_eos.f90 + m_rhs.f90 + main.f90, MFC flags)
+  default ipa   element/type idx 300 bad, const idx 300 bad, elements-in NaN, scalars-in/element-out 300 bad
+  -hipa0        all five kernels 0 bad
+
+# Cross-TU does NOT prevent inlining -- CCE inlines through separate compilations:
+#   Leaf "inner"(mod.f90:18) was inlined.
+#   A loop starting at line 10 was eliminated by optimization.
+# which is why the three-file application repro fails too.

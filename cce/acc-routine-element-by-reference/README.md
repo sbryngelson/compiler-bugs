@@ -85,6 +85,9 @@ fields: device 0.0 in 300 of 300 cells, host 1.4.
 | `results/run-minimal-cce21.txt`, `results/run-minimal-version-sweep.txt` | Measured output of the above, login node. |
 | `results/run-minimal-compute-node-mi250x.txt` | The same seven cases on a Frontier **MI250X compute node** — identical, so this is not a login-node artefact. |
 | `VENDOR-REPORT.md` | Self-contained report for OLCF/HPE, reproducer inline. |
+| `artifacts/loopmark.txt` | CCE's `-hlist=a` messages for the failing and passing builds — the partition/inline/eliminate sequence. |
+| `artifacts/element_out.device.ll`, `artifacts/control_no_loop.device.ll` | Device IR from `.cray.llvm.offloading`. The failing kernel has no call, no GEP and no store. |
+| `artifacts/ipa0-evidence.txt` | `-hipa0` fixes both reproducers; CCE inlines across TUs. |
 
 ## The minimal case
 
@@ -127,11 +130,12 @@ The first version of this page concluded that the trigger was *"an array element
 reference into a `routine seq` that CCE does not inline"*, and that *"a callee small enough
 for CCE to inline hides the defect"*. Both were wrong, and the minimization above says why:
 
-* **Inlining is not the mechanism.** `minimal/element_out.f90` is a single file with one
-  call level and an eight-line callee, and it fails. Conversely, with the loop directive
-  removed, the same call stays correct when the callee is moved to its own translation unit
-  **and** when interprocedural optimization is disabled with `-hipa0`. Non-inlining is
-  neither necessary nor sufficient.
+* **The inlining claim was backwards.** The original page said the defect needs a callee
+  CCE does *not* inline, and that a small callee would hide it. The opposite is true:
+  inlining is a **required** link in the chain, and `-hipa0` — which prevents it — fixes
+  both the minimal case and the full application reproducer. A small callee does not hide
+  the defect; `minimal/element_out.f90` has an eight-line one and fails. Separate
+  compilation does not prevent it either, because CCE inlines across translation units.
 * **What the original callee graph was really contributing** was the `!$acc loop seq` on
   the Newton iteration inside `reference_curve` — not its size. Making the callee big
   enough to defeat the inliner was a coincidence of how the reproducer was built.
@@ -195,6 +199,73 @@ through one give NaN.
 The build prints `ftn-7255` for `main.f90` line 28: that is the **host** reference loop that
 calls `bulk_modulus` (an `acc routine`) to compute `ref`; CCE notes the routine's
 directive is ignored on the host. Harmless, and not part of what is being measured.
+
+## Mechanism, from CCE's own output
+
+`-hlist=a` and the device IR ([`artifacts/`](artifacts)) show the whole sequence. Three
+compiler messages tell the story; the only difference between them is the one directive.
+
+**Wrong** (`element_out.f90`):
+
+```
+ftn-6430 ACCEL, Line = 39   A loop starting at line 39 was partitioned across the
+                            threadblocks AND the 256 threads within a threadblock.
+ftn-3001 IPA,   Line = 40   Leaf "inner"(element_out.f90:18) was inlined.
+ftn-6002 SCALAR,Line = 40   A loop starting at line 40 was eliminated by optimization.
+```
+
+**Correct** (`control_no_loop.f90`, the same file minus the directive):
+
+```
+ftn-6430 ACCEL, Line = 30   A loop starting at line 30 was partitioned across the
+                            thread blocks.                       <- gang only
+ftn-3001 IPA,   Line = 31   Leaf "inner"(control_no_loop.f90:10) was inlined.
+ftn-6430 ACCEL, Line = 31   A loop starting at line 31 was partitioned across the
+                            256 threads within a threadblock.    <- vector goes to the callee's loop
+```
+
+So:
+
+1. The `!$acc loop` inside the routine makes CCE partition the **outer** `parallel loop`
+   across gang **and** vector. Without it, the outer loop gets gang only and the vector
+   level is handed to the inlined callee's own loop.
+2. CCE inlines `inner` into that kernel — **including across separate compilations**
+   (`Leaf "inner"(mod.f90:18) was inlined`), which is why the three-file application
+   reproducer fails too.
+3. The inlined `seq` loop is then "eliminated by optimization" — and the elimination takes
+   the load/store through the dummy argument with it.
+
+The device IR confirms step 3 is a deletion, not a misaddressing. The whole kernel body is
+gone ([`artifacts/element_out.device.ll`](artifacts/element_out.device.ll)):
+
+```llvm
+define amdgpu_kernel void @"element_out_$ck_L38_1"(i64 %arg) {
+  %r6 = add i32 %r4, %r5                    ; global thread index
+  %r9 = icmp ugt i32 %r6, 299               ; bounds check
+  br i1 %r9, label %bb63, label %"39utop1"
+  ...
+  ret void                                  ; <- no call, no getelementptr, no store
+}
+```
+
+There is **no call to `inner`, no GEP into `b`, and no store** anywhere in the kernel. The
+standalone `inner` body still exists and is still correct (`fadd double %r4, 8.0` then
+`store double %r5, ptr %y` — CCE folded the eight iterations correctly there), but nothing
+calls it. The passing build has four stores in the kernel and the correct address
+arithmetic.
+
+This all happens in `optcg`, before the IR is written to `.cray.llvm.offloading` — see
+[`../PIPELINE.md`](../PIPELINE.md). It is therefore **out of reach of `CRAY_CCE_LLD_ARGS`**,
+which only reaches the `lld`/LTO stage.
+
+### A second workaround: `-hipa0`
+
+Disabling CCE's inliner removes step 2 and the defect goes with it — on the minimal case
+and on the full application-shaped reproducer, where all five kernels go to zero bad
+([`artifacts/ipa0-evidence.txt`](artifacts/ipa0-evidence.txt)). It is a blunt instrument:
+it turns off inlining for the whole compilation, which costs performance everywhere. The
+scalar-argument workaround remains the one to use. `-hipa0` is useful mainly as a
+**diagnostic**: if `-hipa0` fixes a wrong answer, this defect is a strong suspect.
 
 ## What the mechanism is *not*
 

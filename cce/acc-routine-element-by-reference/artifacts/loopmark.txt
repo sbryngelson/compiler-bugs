@@ -1,0 +1,57 @@
+# CCE loopmark (-hlist=a) for the failing and passing cases, CCE 21.0.2, -hacc -O2.
+# This is CCE's own account of what it did. The three lines that matter are marked.
+
+=================== element_out.f90  (WRONG) ===================
+ftn-6002 ftn: SCALAR INNER, File = element_out.f90, Line = 25 
+  A loop starting at line 25 was eliminated by optimization.
+
+ftn-6005 ftn: SCALAR ELEMENT_OUT, File = element_out.f90, Line = 36 
+  A loop starting at line 36 was unrolled 2 times.
+
+ftn-6204 ftn: VECTOR ELEMENT_OUT, File = element_out.f90, Line = 36 
+  A loop starting at line 36 was vectorized.
+
+ftn-6405 ftn: ACCEL ELEMENT_OUT, File = element_out.f90, Line = 38 
+  A region starting at line 38 and ending at line 41 was placed on the accelerator.
+
+ftn-6430 ftn: ACCEL ELEMENT_OUT, File = element_out.f90, Line = 39 
+  A loop starting at line 39 was partitioned across the threadblocks and the 256 threads within a threadblock.
+
+ftn-6005 ftn: SCALAR ELEMENT_OUT, File = element_out.f90, Line = 43 
+  A loop starting at line 43 was unrolled 2 times.
+
+ftn-6204 ftn: VECTOR ELEMENT_OUT, File = element_out.f90, Line = 43 
+  A loop starting at line 43 was vectorized.
+
+
+=================== control_no_loop.f90  (CORRECT) ===================
+ftn-6002 ftn: SCALAR INNER, File = control_no_loop.f90, Line = 16 
+  A loop starting at line 16 was eliminated by optimization.
+
+ftn-6005 ftn: SCALAR CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 27 
+  A loop starting at line 27 was unrolled 2 times.
+
+ftn-6204 ftn: VECTOR CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 27 
+  A loop starting at line 27 was vectorized.
+
+ftn-6405 ftn: ACCEL CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 29 
+  A region starting at line 29 and ending at line 32 was placed on the accelerator.
+
+ftn-3182 ftn: IPA CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 30 
+  Loop has been flattened.
+
+ftn-6430 ftn: ACCEL CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 30 
+  A loop starting at line 30 was partitioned across the thread blocks.
+
+ftn-3001 ftn: IPA CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 31 
+  Leaf "inner"(/lustre/orion/cfd154/scratch/sbryngelson/testbug/cb/cce/acc-routine-element-by-reference/minimal/control_no_loop.f90:10) was inlined.
+
+ftn-6430 ftn: ACCEL CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 31 
+  A loop starting at line 31 was partitioned across the 256 threads within a threadblock.
+
+ftn-6005 ftn: SCALAR CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 34 
+  A loop starting at line 34 was unrolled 2 times.
+
+ftn-6204 ftn: VECTOR CONTROL_NO_LOOP, File = control_no_loop.f90, Line = 34 
+  A loop starting at line 34 was vectorized.
+
