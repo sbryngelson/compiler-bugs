@@ -1,0 +1,29 @@
+== environment (want CCE 21.0.2)
+  ok  ftn is CCE 21.0.2
+  ok  accel target is amd_gfx90a
+
+== the defect (-hacc -O2)
+  element out, loop in routine           element out : bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
+  element in,  loop in routine           element in  : bad 300 of 300   got           NaN   expected  8.000000E+00
+  derived-type field in                  dtype in    : bad 300 of 300   got           NaN   expected  8.000000E+00
+
+== controls (each removes exactly one ingredient)
+  same, loop directive deleted           no loop     : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+  same, scalar actual arg                scalar arg  : bad 0 of 300   got  8.000000E+00   expected  8.000000E+00
+
+  AS DOCUMENTED    intent(out) array element: store dropped (got: 300)
+  AS DOCUMENTED    intent(in) array element: reads garbage (NaN) (got: 300)
+  AS DOCUMENTED    attached derived-type field: same as a plain array (got: 300)
+  AS DOCUMENTED    control: no loop directive -> correct (got: 0)
+  AS DOCUMENTED    control: scalar actual arg -> correct (the workaround) (got: 0)
+
+== optimization level (element_out.f90)
+  -O0    bad 0 of 300
+  -O1    bad 0 of 300
+  -O2    bad 300 of 300
+  -O3    bad 300 of 300
+
+RESULT: BUG PRESENT (as documented). The two ingredients are an `!$acc loop`
+        inside an `!$acc routine seq` and an array element passed as an actual
+        argument to it. Removing either one is sufficient; the application fix is
+        to remove the second (pass scalars) because it is local to the call site.
