@@ -19,10 +19,18 @@ never written (the array keeps its previous contents). Wrong from `-O2` up, corr
 | no | array element | right |
 | no | scalar | right |
 
-Delete the loop directive — which is a no-op in a `seq` routine anyway, since such a
-routine generates no parallelism — and the same program is correct. Pass a scalar and it
-is correct. Nothing else matters: not the derived type, not the call depth, not the
-number of translation units, not the index expression.
+Delete the loop directive and the same program is correct. Pass a scalar and it is
+correct. Nothing else matters: not the derived type, not the call depth, not the number of
+translation units, not the index expression.
+
+**This is not a case of invalid input being miscompiled.** An `!$acc loop` in a `routine
+seq` is arguably meaningless, since a `seq` routine generates no parallelism, so the
+minimal case could be waved away. The conforming case cannot: an `!$acc loop vector`
+inside an `!$acc routine vector`, called from a gang-partitioned loop, is textbook
+OpenACC and is miscompiled identically
+([`minimal/legal_routine_vector.f90`](minimal/legal_routine_vector.f90)). Where the
+directive *is* meaningless, CCE should diagnose it or ignore it; where it is meaningful,
+it must work. Neither happens.
 
 * **Component:** CCE Fortran, OpenACC (`-hacc`), gfx90a
 * **Severity:** silent miscompilation — wrong numerical results
@@ -30,8 +38,13 @@ number of translation units, not the index expression.
   ([`results/run-minimal-version-sweep.txt`](results/run-minimal-version-sweep.txt)).
   Not a regression. The OpenMP-offload build of the same application source is correct,
   as are amdflang and nvfortran.
-* **Not yet checked:** the `-homp` spelling of this reproducer; whether `routine gang`
-  / `worker` / `vector` behave the same.
+* **All four routine levels** are affected — `seq`, `vector`, `worker`, `gang` — with the
+  same signature.
+* **OpenACC only.** The same shape written in OpenMP (`-homp`) is correct: a `declare
+  target` routine containing `!$omp simd`, `!$omp loop bind(thread)`, or no inner
+  directive, called from `target teams distribute parallel do`, all give exact results
+  ([`minimal/control_openmp.f90`](minimal/control_openmp.f90)). This is CCE's OpenACC
+  lowering, not its device code generation generally.
 
 CCE accepts the nested `!$acc loop` without a diagnostic and then miscompiles the call
 rather than ignoring the directive. **A warning here would have cost the application a
@@ -64,7 +77,9 @@ fields: device 0.0 in 300 of 300 cells, host 1.4.
 | `minimal/element_in.f90` | Same defect, `intent(in)` element — reads garbage, so the symptom is NaN. |
 | `minimal/derived_type_in.f90` | The attached `q%vf(1)%sf(k)` field MFC actually uses, in place of the plain module array. Identical outcome. |
 | `minimal/control_no_loop.f90` | `element_out.f90` with the one `!$acc loop seq` line deleted. Correct. |
+| `minimal/legal_routine_vector.f90` | **Conforming OpenACC**: `!$acc loop vector` inside `!$acc routine vector`, called from a gang loop. Wrong in exactly the same way — this is what makes it undismissable. |
 | `minimal/control_scalar_arg.f90` | `element_out.f90` with the directive kept and a scalar actual argument. Correct — this is the workaround. |
+| `minimal/control_openmp.f90` | The same shape in OpenMP (`-homp`). Correct, so the defect is specific to OpenACC lowering. |
 | `minimal/run.sh` | Builds all five, checks each against its documented outcome, then sweeps `-O0..-O3`. |
 | `results/run-minimal-cce21.txt`, `results/run-minimal-version-sweep.txt` | Measured output of the above. |
 
@@ -95,8 +110,10 @@ end do
 element out : bad 300 of 300   got  0.000000E+00   expected  8.000000E+00
 element in  : bad 300 of 300   got           NaN   expected  8.000000E+00
 dtype in    : bad 300 of 300   got           NaN   expected  8.000000E+00
+legal vector: bad 300 of 300   got  0.000000E+00   expected  8.000000E+00   <- conforming
 no loop     : bad   0 of 300   got  8.000000E+00   expected  8.000000E+00
 scalar arg  : bad   0 of 300   got  8.000000E+00   expected  8.000000E+00
+openmp      : bad   0 of 300   got  8.000000E+00   expected  8.000000E+00
 ```
 
 `-O0` and `-O1` are correct; `-O2` and `-O3` are wrong.
@@ -193,7 +210,11 @@ Added by the minimization, and these are the ones that identify it:
 
 * **Not inlining, and not the number of translation units** — see the corrections above.
 * **Not the derived type** — a plain `declare create` array fails the same way.
-* **Not `seq` specifically** — a bare `!$acc loop` inside the routine triggers it too.
+* **Not `seq` specifically** — a bare `!$acc loop` inside the routine triggers it too, and
+  all four routine levels (`seq`, `vector`, `worker`, `gang`) fail identically.
+* **Not device code generation in general** — the OpenMP spelling of the same shape is
+  correct, so this is in the OpenACC path.
+* **Not invalid input** — the conforming `vector`-in-`routine vector` case fails too.
 * **It is the loop directive.** Every configuration that contains an `!$acc loop` inside
   the `!$acc routine seq` *and* passes an array element to it is wrong; every configuration
   missing either one is right.

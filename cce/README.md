@@ -46,7 +46,7 @@ scratch** and a **61% slowdown** on MFC's IGR solver. Three lines of upstream co
 | [private-flat-pointer](private-flat-pointer) | Fortran front end | private→flat via `ptrtoint`/`zext`/`inttoptr` drops the scratch aperture, so offset 0 is indistinguishable from null. **LLVM is correct here** |
 | [explicit-shape-dummy-lost-writes](explicit-shape-dummy-lost-writes) | Fortran front end | no extent emitted for an explicit-shape dummy → 0-byte map → runtime returns the host pointer |
 | [inlinenever-ignored-device](inlinenever-ignored-device) | Fortran front end | `!DIR$ INLINENEVER` accepted, then emitted with `alwaysinline` |
-| [acc-routine-element-by-reference](acc-routine-element-by-reference) | Fortran front end / OpenACC lowering | an `!$acc loop` inside an `!$acc routine seq` corrupts array-element actual arguments to that routine: reads garbage, writes lost. **CCE 19.0.0, 20.0.2, 21.0.0, 21.0.2**, `-hacc`, `-O2`+; a scalar argument or deleting the directive is exact. 37-line `minimal/` |
+| [acc-routine-element-by-reference](acc-routine-element-by-reference) | Fortran front end / OpenACC lowering | an `!$acc loop` inside an `!$acc routine seq` corrupts array-element actual arguments to that routine: reads garbage, writes lost. **CCE 19.0.0, 20.0.2, 21.0.0, 21.0.2**, `-hacc`, `-O2`+; a scalar argument or deleting the directive is exact. All four routine levels, including the conforming `vector`-in-`routine vector` case; the OpenMP spelling is correct. 37-line `minimal/` |
 
 ### Belongs upstream, not to HPE
 

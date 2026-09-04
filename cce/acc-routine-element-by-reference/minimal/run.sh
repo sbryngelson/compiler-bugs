@@ -14,6 +14,10 @@
 # case stays correct when the callee is put in its own translation unit and when
 # interprocedural optimization is disabled (-hipa0).
 #
+# Not confined to questionable input, either: all four routine levels fail, and
+# `!$acc loop vector` inside `!$acc routine vector` called from a gang loop is
+# conforming OpenACC. The OpenMP spelling of the same shape is correct.
+#
 #   module reset
 #   module load cpe/26.03 rocm/7.2.0 craype-accel-amd-gfx90a
 #   module swap cce cce/21.0.2
@@ -41,17 +45,22 @@ echo "== the defect ($F)"
 eo=$(bad element_out.f90);      printf '  %-38s %s\n' 'element out, loop in routine'   "$(./_element_out    2>/dev/null | head -1)"
 ei=$(bad element_in.f90);       printf '  %-38s %s\n' 'element in,  loop in routine'   "$(./_element_in     2>/dev/null | head -1)"
 dt=$(bad derived_type_in.f90);  printf '  %-38s %s\n' 'derived-type field in'          "$(./_derived_type_in 2>/dev/null | head -1)"
+lv=$(bad legal_routine_vector.f90); printf '  %-38s %s\n' 'conforming: vector in routine vector' "$(./_legal_routine_vector 2>/dev/null | head -1)"
 echo
 echo "== controls (each removes exactly one ingredient)"
 nl=$(bad control_no_loop.f90);  printf '  %-38s %s\n' 'same, loop directive deleted'   "$(./_control_no_loop    2>/dev/null | head -1)"
 sa=$(bad control_scalar_arg.f90); printf '  %-38s %s\n' 'same, scalar actual arg'      "$(./_control_scalar_arg 2>/dev/null | head -1)"
+F="-homp -O2"; om=$(bad control_openmp.f90); F="-hacc -O2"
+printf '  %-38s %s\n' 'same shape in OpenMP (-homp)'   "$(./_control_openmp 2>/dev/null | head -1)"
 
 echo
 guard_verdict 300 "$eo" "intent(out) array element: store dropped"
 guard_verdict 300 "$ei" "intent(in) array element: reads garbage (NaN)"
 guard_verdict 300 "$dt" "attached derived-type field: same as a plain array"
 guard_verdict 0   "$nl" "control: no loop directive -> correct"
+guard_verdict 300 "$lv" "conforming OpenACC (vector in routine vector) also wrong"
 guard_verdict 0   "$sa" "control: scalar actual arg -> correct (the workaround)"
+guard_verdict 0   "$om" "control: the OpenMP spelling is correct"
 
 echo
 echo "== optimization level (element_out.f90)"
