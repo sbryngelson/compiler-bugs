@@ -58,7 +58,7 @@ its own README with the full analysis; this page is only an index.
 
 | case | compiler | tracking | state |
 |---|---|---|---|
-| [fort2-ili-sptr-type-confusion](nvhpc/fort2-ili-sptr-type-confusion) | nvfortran 24.9 – 26.5 | [forums](https://forums.developer.nvidia.com/t/nvfortran-mp-gpu-fort2-segfaults-on-a-target-teams-loop-is-alloc-indexes-the-ili-table-with-a-symbol-number-24-9-through-26-5/383574) 2026-09-18 | **root-caused**: `is_alloc()` indexes the ILI table with a symbol number, one missing opcode check. The out-of-bounds read happens on every affected compile; only whether the address is mapped decides between a segfault and a silent bad read. Unfixed in 26.5, absent in 24.5. OpenMP offload only — OpenACC verified unaffected |
+| [fort2-ili-sptr-type-confusion](nvhpc/fort2-ili-sptr-type-confusion) | nvfortran 24.9 – 26.5 | [forums](https://forums.developer.nvidia.com/t/nvfortran-mp-gpu-fort2-segfaults-on-a-target-teams-loop-is-alloc-indexes-the-ili-table-with-a-symbol-number-24-9-through-26-5/383574) 2026-09-18 TPR#38992 | **root-caused**: `is_alloc()` indexes the ILI table with a symbol number, one missing opcode check. The out-of-bounds read happens on every affected compile; only whether the address is mapped decides between a segfault and a silent bad read. Unfixed in 26.5, absent in 24.5. OpenMP offload only — OpenACC verified unaffected |
 
 ### MFC changes driven by these
 
@@ -87,8 +87,8 @@ file: 29x scratch and a 61% slowdown on a real solver. Full status table in [cce
 
 ## Upstream LLVM
 
-Defects reproducing on stock upstream LLVM rather than a vendor fork — filed with
-llvm/llvm-project, not with HPE/AMD/Intel. See [llvm/](llvm).
+Defects reproducing on stock upstream LLVM rather than a vendor fork.
+Filed with llvm/llvm-project, not with HPE/AMD/Intel. See [llvm/](llvm).
 
 | entry | version(s) | status | summary |
 |---|---|---|---|
