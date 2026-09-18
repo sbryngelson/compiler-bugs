@@ -1,7 +1,7 @@
 ## Compiler Bug Reproducers
 
 Minimal Fortran reproducers for compiler bugs hit by HPC workloads, mostly from
-[MFC](https://github.com/MFlowCode/MFC), across AMD, Cray and Intel toolchains. Each directory has
+[MFC](https://github.com/MFlowCode/MFC), across AMD, Cray, Intel and NVIDIA toolchains. Each directory has
 its own README with the full analysis; this page is only an index.
 
 ### AMD — amdflang / flang OpenMP offload (MI250X, MI300X, MI355X)
@@ -53,6 +53,12 @@ its own README with the full analysis; this page is only an index.
 | case | compiler | tracking | state |
 |---|---|---|---|
 | [intel/](intel) — 4 offload bugs | ifx 2025.1.1 | filed via OLCF, case ID pending | reproducers only |
+
+### NVIDIA — nvfortran OpenMP target offload (`-mp=gpu`, cc80)
+
+| case | compiler | tracking | state |
+|---|---|---|---|
+| [fort2-ili-sptr-type-confusion](nvhpc/fort2-ili-sptr-type-confusion) | nvfortran 24.9 – 26.5 | not yet filed | **root-caused**: `is_alloc()` indexes the ILI table with a symbol number, one missing opcode check. The out-of-bounds read happens on every affected compile; only whether the address is mapped decides between a segfault and a silent bad read. Unfixed in 26.5, absent in 24.5. OpenMP offload only — OpenACC verified unaffected |
 
 ### MFC changes driven by these
 
