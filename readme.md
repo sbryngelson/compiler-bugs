@@ -71,34 +71,10 @@ loss), [#1572](https://github.com/MFlowCode/MFC/pull/1572) (Riemann hot-path dec
 Open: [#1628](https://github.com/MFlowCode/MFC/pull/1628).
 
 
-## Working with LLVM reviewers
+## CCE 21 defects fixed upstream before CCE's own cutoff
 
-jdoerfert, 2026-08-14, on llvm#214263: "You are reaching the limit of pending PRs that are all AI
-generated and a pain to read. The AI summarizes various things, related or not, and the fixes are
-not always clear. The testing should be on the IR level as well as the execution level."
-
-Checked against what was actually filed, all of it was fair:
-
-* **Volume.** Five PRs open, four filed in two days, three landing on the same reviewers.
-* **Length.** Bodies ran 420-620 words, roughly 40% preamble ("Two details worth calling out for
-  review"), hedges softening already-measured claims, and adjacent findings that belong in notes.
-  Rewritten to 330-350 words; the same tics were in the PR comments.
-* **Testing.** llvm#214263 had only an execution test. The convention, from `129267e8fcfc`, is that
-  an OMPIRBuilder codegen change gets an `mlir/test/Target/LLVMIR` lit test; a DeviceRTL change gets
-  an `offload/test` execution test. Check what comparable commits added before deciding.
-
-Separately, on llvm#216117: "I mostly want to avoid we are fixing an issue that cannot be triggered
-by the user." A runtime fix nothing can reach is not worth a reviewer's time on its own, even when
-it is correct. Verify a user-visible reproducer exists **before** filing, not after being asked.
-
-Rules of thumb that follow: state the defect, the fix and the test, and nothing else; do not
-editorialise about the work or about oneself; check the file's own history for the testing
-convention; and prefer one reachable change over two unreachable halves.
-
-## Headline: two CCE 21 defects have upstream fixes that predate CCE's own merge cutoff
-
-CCE 21.0.2 is built on `llvmorg-21.1.8` (its module `help` text states *"merges up to Dec 12,
-2025"*). Two of its three back-end defects were already fixed upstream **before** that date:
+CCE 21.0.2 is built on `llvmorg-21.1.8`, which merges up to 2025-12-12. Two of its three back-end
+defects were fixed upstream before that date:
 
 | defect | upstream fix | landed | vs cutoff |
 |---|---|---|---|
@@ -106,19 +82,8 @@ CCE 21.0.2 is built on `llvmorg-21.1.8` (its module `help` text states *"merges 
 | [promote-alloca dropped store](cce/promote-alloca-dropped-store) | [`b965f265388a`](https://github.com/llvm/llvm-project/pull/157682) | 2025-09-10 | 3 months before |
 | [InstCombine PHI addrspace cast](cce/instcombine-phi-addrspace-cast) | [`6d033abb7`](https://github.com/llvm/llvm-project/pull/181064) | 2026-02-15 | 2 months after |
 
-Verifiable in one command each, since `llvmorg-21.1.8` is a real tag:
-
-```console
-$ git merge-base --is-ancestor 30007a541493 llvmorg-21.1.8   # false -- absent from CCE's base
-$ git merge-base --is-ancestor 30007a541493 llvmorg-22.1.0   # true
-```
-
-The AGPR one matters most: its absence forces `-mattr=-mai-insts`, which disables AGPRs on
-gfx90a's unified register file and costs **29x scratch** and a **61% slowdown** on a real
-solver. Three lines of upstream code recover it.
-
-See [cce/](cce) for the full status table, including the five defects that are CCE's own and
-have no upstream fix.
+Missing the AGPR fix forces `-mattr=-mai-insts`, which disables AGPRs on gfx90a's unified register
+file: 29x scratch and a 61% slowdown on a real solver. Full status table in [cce/](cce).
 
 ## Upstream LLVM
 
