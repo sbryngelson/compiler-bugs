@@ -168,6 +168,7 @@ would hit it.
 | --- | --- |
 | `repro.f90` | The reproducer. One file: 336 lines of unreferenced filler and an 8-line program. |
 | `repro.sh` | Compiles it, then the three controls that must all succeed. |
+| `FORUM-POST.md` | Ready to paste into the NVIDIA developer forum; reproducer inline as a generator snippet. |
 
 ## Reproduce
 
