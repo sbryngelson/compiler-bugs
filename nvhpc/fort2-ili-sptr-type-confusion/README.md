@@ -3,8 +3,11 @@
 Compiler: nvfortran 24.9 through 26.5, reduced on 25.5, verified on 25.11 and 26.5. Clean on 24.5.
 Target cc80, but the crash is in host-side front-end code and no device code is reached.
 
-**Status: ROOT-CAUSED TO ONE MISSING OPCODE CHECK. FILED 2026-09-18**, no TPR yet. Present in 26.5,
-the newest release.
+**Status: ROOT-CAUSED TO ONE MISSING OPCODE CHECK. FILED 2026-09-18**.
+
+> **Response:** I was able to reproduce your observations and opened a report with engineering. It’s number TPR#38992. When I hear back from engineering, I’ll let you know! I imagine that it’s too late in the cycle to make it into the upcoming 26.9, but perhaps the next release will have the fix in it! I’ll let you know when I know more. [see here](https://forums.developer.nvidia.com/t/nvfortran-mp-gpu-fort2-segfaults-on-a-target-teams-loop-is-alloc-indexes-the-ili-table-with-a-symbol-number-24-9-through-26-5/383574)
+
+Present in 26.5, the newest release.
 
 ```
 nvfortran-Fatal-/opt/nvidia/hpc_sdk/Linux_x86_64/25.11/compilers/bin/tools/fort2 TERMINATED by signal 11
@@ -159,7 +162,7 @@ would hit it.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | [NVIDIA developer forums](https://forums.developer.nvidia.com/t/nvfortran-mp-gpu-fort2-segfaults-on-a-target-teams-loop-is-alloc-indexes-the-ili-table-with-a-symbol-number-24-9-through-26-5/383574), posted 2026-09-18; no TPR assigned yet |
+| Vendor | [NVIDIA developer forums](https://forums.developer.nvidia.com/t/nvfortran-mp-gpu-fort2-segfaults-on-a-target-teams-loop-is-alloc-indexes-the-ili-table-with-a-symbol-number-24-9-through-26-5/383574), posted 2026-09-18; TPR#38992 |
 | MFC | workaround in `m_amr_exchange.fpp`, commit `245b3868` |
 
 ## Files
