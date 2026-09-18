@@ -3,8 +3,8 @@
 Compiler: nvfortran 24.9 through 26.5, reduced on 25.5, verified on 25.11 and 26.5. Clean on 24.5.
 Target cc80, but the crash is in host-side front-end code and no device code is reached.
 
-**Status: ROOT-CAUSED TO ONE MISSING OPCODE CHECK. NOT YET FILED.** Present in 26.5, the newest
-release.
+**Status: ROOT-CAUSED TO ONE MISSING OPCODE CHECK. FILED 2026-09-18**, no TPR yet. Present in 26.5,
+the newest release.
 
 ```
 nvfortran-Fatal-/opt/nvidia/hpc_sdk/Linux_x86_64/25.11/compilers/bin/tools/fort2 TERMINATED by signal 11
@@ -159,7 +159,7 @@ would hit it.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | not yet filed |
+| Vendor | [NVIDIA developer forums](https://forums.developer.nvidia.com/t/nvfortran-mp-gpu-fort2-segfaults-on-a-target-teams-loop-is-alloc-indexes-the-ili-table-with-a-symbol-number-24-9-through-26-5/383574), posted 2026-09-18; no TPR assigned yet |
 | MFC | workaround in `m_amr_exchange.fpp`, commit `245b3868` |
 
 ## Files
@@ -168,7 +168,6 @@ would hit it.
 | --- | --- |
 | `repro.f90` | The reproducer. One file: 336 lines of unreferenced filler and an 8-line program. |
 | `repro.sh` | Compiles it, then the three controls that must all succeed. |
-| `FORUM-POST.md` | Ready to paste into the NVIDIA developer forum; reproducer inline as a generator snippet. |
 
 ## Reproduce
 
