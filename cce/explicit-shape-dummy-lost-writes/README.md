@@ -131,8 +131,11 @@ form, and an earlier revision of this file offered that as the smoking gun. It i
 the **passing** OpenACC explicit-shape arm launches `blocks:220 threads:256` too. The
 oversized grid is how CCE lowers this loop form, not a symptom of the defect.
 
-So no mechanism is established here. What is established is the behaviour, its
-model-dependence, and two hypotheses that are ruled out.
+Both hypotheses are ruled out *for the standalone reproducer*, whose trace shows the map
+arriving at its full 2560 bytes. They do not settle the general case: the mechanism is
+established below from MFC's own trace, where the map for the same dummy shape arrives as
+0 bytes. The two traces are of different programs — `a`/`gps` here, `ghost_points_in`
+there. See [Root cause](#root-cause-no-extent-is-emitted-for-the-explicit-shape-dummy).
 
 ## Workaround
 
