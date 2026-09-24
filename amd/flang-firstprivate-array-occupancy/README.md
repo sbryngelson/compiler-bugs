@@ -201,7 +201,7 @@ AMD (Jonathan03ant) is now routing this to their internal team.
 
 | Where | Link / ID |
 |-------|-----------|
-| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — **open**; the only thing still live. Awaiting an AFAR drop with `e949b654424b`, then re-run the occupancy trace |
+| ROCm/llvm-project | [#2909](https://github.com/ROCm/llvm-project/issues/2909) — **open**; the only thing still live. `e949b654424b` is in AFAR 24.3.0 (`therock-afar-24.3.0-multiarch-10.1.0-592954c`, ROCm/llvm-project `3ba19712e9fb`) by commit ancestry, checked 2026-09-24; the occupancy trace has not been re-run on it yet |
 | llvm/llvm-project | [#203890](https://github.com/llvm/llvm-project/issues/203890) — closed 2026-07-24 against `e949b654424b`, scoped to the upstream link failure |
 | llvm/llvm-project | [#200922](https://github.com/llvm/llvm-project/issues/200922) — closed by the merge (the compile-time half, @bhandarkar-pranav's report) |
 | **Fix (landed)** | [#209539](https://github.com/llvm/llvm-project/pull/209539) → [`e949b654424b`](https://github.com/llvm/llvm-project/commit/e949b654424beda81ab4db154a72b904c8b32245), merged 2026-07-24 — `fir::AliasAnalysis` returns `NoAlias` for the copy-region pair |

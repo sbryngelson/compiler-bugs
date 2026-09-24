@@ -9,6 +9,10 @@ Upstream fix: [llvm/llvm-project#198014](https://github.com/llvm/llvm-project/pu
 (`2315381d7112`, merged 2026-05-20, fixes [llvm#197393](https://github.com/llvm/llvm-project/issues/197393)).
 Every 23.2.x drop we have predates it.
 
+**AFAR 24.3.0 (checked 2026-09-24):** `2315381d7112` is in `therock-afar-24.3.0-multiarch-10.1.0-592954c` (ROCm/llvm-project `3ba19712e9fb`). Confirmed by commit ancestry only
+(`gh api repos/ROCm/llvm-project/compare/<fix>...3ba19712e9fb` returns `ahead`); the reproducer has
+not been run on this drop yet.
+
 ## Bug
 
 flang stamps unsigned-no-wrap flags — `nusw nuw` on `array_coor` GEPs and `nuw` on the associated
