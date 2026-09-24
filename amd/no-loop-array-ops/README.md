@@ -5,8 +5,13 @@ Target hardware: gfx90a (MI250X). Compiler: amdflang 23.1.0–23.2.1 (therock-af
 
 **Status: FIXED upstream.** Landed via [ROCm/llvm-project#3058](https://github.com/ROCm/llvm-project/pull/3058)
 (merged into `amd-staging` 2026-06-25), re-landing the patch originally submitted as
-[#2602](https://github.com/ROCm/llvm-project/pull/2602). Still open upstream at
-[llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621).
+[#2602](https://github.com/ROCm/llvm-project/pull/2602). Fixed upstream by
+[llvm#214073](https://github.com/llvm/llvm-project/pull/214073), which closed
+[llvm/llvm-project#198621](https://github.com/llvm/llvm-project/issues/198621) on 2026-08-11.
+
+**AFAR 24.3.0 (checked 2026-09-24):** ROCm#3058 and llvm#214073 (`9c317bbbdbea`) are both in `therock-afar-24.3.0-multiarch-10.1.0-592954c` (ROCm/llvm-project `3ba19712e9fb`). Confirmed by commit ancestry only
+(`gh api repos/ROCm/llvm-project/compare/<fix>...3ba19712e9fb` returns `ahead`); the reproducer has
+not been run on this drop yet.
 
 ## Bugs reproduced below (now fixed in amd-staging)
 

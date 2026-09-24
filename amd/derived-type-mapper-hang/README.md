@@ -7,6 +7,10 @@ Upstream fix: [llvm/llvm-project#209645](https://github.com/llvm/llvm-project/pu
 2026-07-22 as `255d0013789d`. Not yet in any AFAR/ROCm drop — the `defaultmap(present:allocatable)`
 workaround below is still needed until a drop carries it.
 
+**AFAR 24.3.0 (checked 2026-09-24):** the fix is in `therock-afar-24.3.0-multiarch-10.1.0-592954c` (ROCm/llvm-project `3ba19712e9fb`); the changelog lists it as `3f7502e95859` "Apply upstream performance PR #209645". Confirmed by commit ancestry only
+(`gh api repos/ROCm/llvm-project/compare/<fix>...3ba19712e9fb` returns `ahead`); the reproducer has
+not been run on this drop yet.
+
 ## Bug
 
 flang 23 emits a per-component `.omp_mapper.<type>_omp_default_mapper` for a **flat** derived type
