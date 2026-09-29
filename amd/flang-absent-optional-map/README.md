@@ -3,10 +3,17 @@
 Target: gfx90a (MI210). Compiler: AFAR 24.3.0 (`therock-afar-24.3.0-multiarch-10.1.0-592954c`,
 ROCm/llvm-project `3ba19712e9fb`), compared against AFAR 23.2.1.
 
-**Status: OPEN.** Reported downstream as [ROCm#4615](https://github.com/ROCm/llvm-project/issues/4615)
-(2026-09-24). Same family as upstream [llvm#154798](https://github.com/llvm/llvm-project/issues/154798)
-(open since 2025-08, the `present()` form); the assumed-shape variant is posted there too. No fix yet.
-Worked around in MFC by always passing the arrays: [MFC#1920](https://github.com/MFlowCode/MFC/pull/1920).
+**Status: fixed upstream** (flag-guarded form). Reported downstream as
+[ROCm#4615](https://github.com/ROCm/llvm-project/issues/4615) (2026-09-24). Fixed by @TIFitis in
+[llvm#227082](https://github.com/llvm/llvm-project/pull/227082), merged 2026-09-29 (`7bb059d7c6fd`),
+which closed ROCm#4615: private attach mappings with a null pointee now keep the full descriptor size.
+Its test (`offload/test/offloading/fortran/optional-mapped-arguments-4.f90`) covers the 1-D and
+5-D-with-lower-bounds flag-guarded shapes of `repro.f90` and `repro_mfc_shape.f90` at `-O0` and `-O2`.
+It does not cover the `present()` form of `repro_present.f90`, which is upstream
+[llvm#154798](https://github.com/llvm/llvm-project/issues/154798) (open since 2025-08; the
+assumed-shape variant is posted there too) and still open. Not yet in ROCm/llvm-project or any AFAR
+drop, and not re-run here. Worked around in MFC by always passing the arrays:
+[MFC#1920](https://github.com/MFlowCode/MFC/pull/1920).
 
 ## Bug
 
