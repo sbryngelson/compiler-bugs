@@ -3,7 +3,52 @@
 Target: gfx90a (MI250X, MI210). Toolchain: AFAR 23.2.1 (`therock-afar-23.2.1-gfx90a-7.13.0`),
 which ships `lib/llvm/lib/clang/23/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a`.
 
-**Status (2026-07-22): OPEN** — reported downstream as [ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517).
+**Status: FIXED UPSTREAM, not in any AFAR drop.** Reported downstream as
+[ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517) (2026-07-22). Upstream fix
+[llvm#226307](https://github.com/llvm/llvm-project/pull/226307), approved by @jhuber6 and merged
+2026-09-29 as `6cd0f021ec73` (a second, empty commit `5274c3a05177` with the same title landed on
+top from a retried merge request; it changes nothing). **AFAR 24.3.0 does not carry it and is worse
+than 23.2.1**: the default `-O3` build no longer hides the problem, so MFC `simulation` fails to link
+out of the box. Patch for existing drops:
+[gist](https://gist.github.com/sbryngelson/6d60c1f8edd9d8da6091ae19ee85b18b).
+
+## AFAR 24.3.0 (checked 2026-09-24 to 2026-09-29)
+
+24.3.0's amdgcn archive has the same unresolvable references (`llvm-nm` on
+`lib/llvm/lib/clang/24/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a`: 76 unresolved in total, the same
+`DescriptorIoTicket`/`DerivedIoTicket` methods and `flang_rt_verbose_abort` among them). What changed
+is that the compiler now reaches them from ordinary code at `-O3`: ALLOCATE of a derived type with
+default initialization inside device code goes through `_FortranAAllocatableAllocate` ->
+`Initialize` -> the work queue. That gives the minimal reproducer this case lacked (`repro.f90`,
+`make run`):
+
+| toolchain | result |
+|---|---|
+| AFAR 23.2.1 | links, prints `4.` |
+| AFAR 24.3.0, stock runtime | 7 `undefined symbol` errors at device link (checked at `-O2` and `--lto-O0`; MFC fails the same way at its default `-O3`) |
+| AFAR 24.3.0, patched runtime | links and prints `4.` with the device link at `--lto-O3`, `--lto-O2`, `--lto-O1` and `--lto-O0` |
+
+Control for the last row: the stock runtime at `--lto-O0` fails with `flang_rt_verbose_abort`
+undefined, so the variadic call is in the link at that level, and with the patched runtime it
+lowers and runs. The codegen error described below (`unsupported call to variadic function`) was
+observed on 23.2.1 with C stubs and has not been re-checked there.
+
+**The fix.** The tickets live in `descriptor-io.cpp`, which isn't in `gpu_sources`, but the work
+queue still names them. The CUDA PTX library already avoided this with a thin I/O mode
+(`RT_CUDA_THIN_IO`). llvm#226307 renames it `RT_THIN_IO`, defines it in `flang/Common/api-attrs.h`
+for the native GPU builds (`RT_GPU_TARGET && !defined(RT_DEVICE_COMPILATION)`), keeps the CMake
+define for the CUDA PTX library (the regular CUDA library still builds `descriptor-io.cpp` on the
+device; llvm#200063 made that split deliberately), and adds `stl-overrides.cpp`, which defines
+`flang_rt_verbose_abort`, to `gpu_sources`. On amdgcn the archive gains only that one definition and
+loses none; the host archive's symbols are unchanged. Device descriptor/derived-type I/O now stops
+with a runtime error instead of failing to link; scalar device `PRINT` is unchanged.
+
+**Patching a drop.** The gist's `patch-afar-flangrt.sh` reads the source commit from
+`amdflang --version`, sparse-fetches ROCm/llvm-project at that commit, applies the patch, builds the
+amdgcn flang-rt with the drop's own clang (about a minute), and installs it, keeping the original as
+`libflang_rt.runtime.a.orig`. With it plus MFC [#1920](https://github.com/MFlowCode/MFC/pull/1920)
+(for [flang-absent-optional-map](../flang-absent-optional-map)), MFC's full suite passes on 24.3.0:
+723 passed, 0 failed, MI210.
 
 ## Bug
 
@@ -87,7 +132,10 @@ Use a `llvm-nm` at least as new as the archive's producer — ROCm 7.2.0's `llvm
 read AFAR's LLVM-23 bitcode and silently reports **zero** symbols
 (`Unknown attribute kind (105)`), which looks like a clean archive.
 
-## Honest limitation: no minimal reproducer
+## Honest limitation: no minimal reproducer (23.2.1)
+
+Superseded on 24.3.0, where `repro.f90` fails at the default optimization level; see above. The
+23.2.1 notes are kept as they were.
 
 The static defect is exact and verifiable from the archive, but we could **not** reduce the *dynamic*
 failure. Five candidate reproducers all link cleanly at `--lto-O1` on gfx90a: a trivial
