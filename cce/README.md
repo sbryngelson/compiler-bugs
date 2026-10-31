@@ -14,6 +14,23 @@ target (`-homp`); both are affected unless noted.
 code — the front end's own inliner, the `i64` pointer ABI, where the device IR lives and how
 to extract it. Several defects below only make sense against that.
 
+## HPE ticket tracking
+
+**HPECOE-142** is the umbrella ticket containing the combined reports and supporting
+information. Individual tickets map to the reproducers below.
+
+| Ticket | Reproducer | Report |
+|---|---|---|
+| HPECOE-153 | [`promote-alloca-dropped-store`](promote-alloca-dropped-store) | PromoteAllocaToVector silent wrong answers |
+| HPECOE-154 | [`omp-defaultmap-scalar-override`](omp-defaultmap-scalar-override) | OpenMP defaultmap scalar override: silent wrong answers |
+| HPECOE-155 | [`defaultmap-zeroes-resident-arrays`](defaultmap-zeroes-resident-arrays) | defaultmap overwrites resident arrays |
+| HPECOE-156 | [`explicit-shape-dummy-lost-writes`](explicit-shape-dummy-lost-writes) | Explicit-shape device writes never reach the host |
+| HPECOE-157 | [`private-flat-pointer`](private-flat-pointer) | Private flat pointer bug |
+| HPECOE-158 | [`lld-agpr-mfma-assert`](lld-agpr-mfma-assert) | AMDGPU Rewrite AGPR-Copy-MFMA linker crash |
+| HPECOE-160 | [`instcombine-phi-addrspace-cast`](instcombine-phi-addrspace-cast) | InstCombine PHI address-space cast |
+| HPECOE-161 | [`acc-routine-element-by-reference`](acc-routine-element-by-reference) | ACC loop inside routine seq corrupts array-element arguments |
+| HPECOE-162 | [`defaultmap-overrides-private`](defaultmap-overrides-private) | defaultmap overrides private |
+
 ## CCE 21.0.2 status at a glance
 
 CCE 21.0.2 states it is *"LLVM 21 base (merges up to Dec 12, 2025 — LLVM version 21.1.8)"*.

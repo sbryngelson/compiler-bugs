@@ -42,7 +42,7 @@ frame layout happens to place an affected array at offset 0.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
+| Vendor | Filed with HPE/Cray 2026-07-28 — **HPECOE-157** |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
 | Related | [`../promote-alloca-dropped-store`](../promote-alloca-dropped-store) (also private-array lowering, silent rather than fatal) |
 

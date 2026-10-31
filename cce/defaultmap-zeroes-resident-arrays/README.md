@@ -26,7 +26,7 @@ The two directives differ only by the `defaultmap` clauses. `d1` is explicitly m
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending |
+| Vendor | Filed with HPE/Cray 2026-07-28 — **HPECOE-155** |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) |
 | Related | [`../omp-defaultmap-scalar-override`](../omp-defaultmap-scalar-override) — very likely the same underlying defect, see below. [`../explicit-shape-dummy-lost-writes`](../explicit-shape-dummy-lost-writes) — the crash this one chains into. |
 

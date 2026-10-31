@@ -60,7 +60,7 @@ fields: device 0.0 in 300 of 300 cells, host 1.4.
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | Filed with OLCF/HPE 2026-09-03 — case ID pending; report as sent is [`VENDOR-REPORT.md`](VENDOR-REPORT.md) |
+| Vendor | Filed with OLCF/HPE 2026-09-03 — **HPECOE-161**; report as sent is [`VENDOR-REPORT.md`](VENDOR-REPORT.md) |
 | MFC issue | [MFlowCode/MFC#1815](https://github.com/MFlowCode/MFC/issues/1815) |
 | MFC fix | [MFlowCode/MFC#1811](https://github.com/MFlowCode/MFC/pull/1811), commit `1ee119b9`: scalars in, scalar out at every device-routine call; rule recorded in `.claude/rules/common-pitfalls.md` |
 | Related | [`../explicit-shape-dummy-lost-writes`](../explicit-shape-dummy-lost-writes) — also a wrong address handed across a routine boundary, there through a 0-byte map under OpenMP |

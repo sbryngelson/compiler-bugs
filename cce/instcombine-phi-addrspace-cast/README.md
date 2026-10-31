@@ -25,7 +25,7 @@ opt: llvm/lib/IR/Instructions.cpp:3040: static llvm::CastInst*
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | Filed with OLCF/HPE 2026-07-29 — case ID pending |
+| Vendor | Filed with OLCF/HPE 2026-07-29 — **HPECOE-160** |
 | Related | [`../private-flat-pointer`](../private-flat-pointer) — same mixed-address-space family |
 
 ## Files

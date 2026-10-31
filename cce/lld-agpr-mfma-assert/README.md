@@ -7,14 +7,14 @@
 **Status: confirmed on CCE 21.0.0 and 21.0.2. Root-caused — the pass gates on AGPRs being
 *allocated* rather than on MFMA being present, and gfx90a's unified register file makes
 high-pressure MFMA-free kernels allocate AGPRs. A portable source-level workaround exists
-and builds MFC clean on 21.0.2 (see below). Not yet filed with HPE (the linker itself asks
+and builds MFC clean on 21.0.2 (see below). Tracked by HPE as **HPECOE-158** (the linker itself asks
 for a report).**
 
 ## Tracking
 
 | Where | Link / ID |
 |-------|-----------|
-| Vendor | Filed with HPE/Cray 2026-07-28 — case ID pending; `lld` itself asks for a report at https://support.hpe.com/ |
+| Vendor | Filed with HPE/Cray 2026-07-28 — **HPECOE-158**; `lld` itself asks for a report at https://support.hpe.com/ |
 | MFC issue | [MFlowCode/MFC#1684](https://github.com/MFlowCode/MFC/issues/1684) — blocks moving Frontier off `cce/19.0.0` |
 | Related | [`../lld-infer-address-spaces-cce20`](../lld-infer-address-spaces-cce20) (same class, CCE 20.x), [`../contiguous-mix-dropped-stores`](../contiguous-mix-dropped-stores) (why staying on 19.0.0 is also unsafe), [`../mir-roundtrip-bb-name`](../mir-roundtrip-bb-name) (hit while reducing this) |
 | Source | MFC [#1679](https://github.com/MFlowCode/MFC/pull/1679) build; reduced repro in `repro/` |
