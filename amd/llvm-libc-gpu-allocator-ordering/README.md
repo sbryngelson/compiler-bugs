@@ -5,10 +5,11 @@ Target: gfx942 (MI300A, six XCCs, one L2 each). Toolchain: AFAR 24.3.0
 `main` at `fc16f151a697` (2026-11-02), libc built for `amdgcn-amd-amdhsa` and linked into the program with
 `-Xoffload-linker <build>/libc/lib/libc.a`.
 
-**Status: open.** Upstream [llvm#238205](https://github.com/llvm/llvm-project/issues/238205), fix
-proposed in [llvm#238208](https://github.com/llvm/llvm-project/pull/238208); downstream
-[ROCm#5228](https://github.com/ROCm/llvm-project/issues/5228) asks for the fix in `amd-staging` and the next
-AFAR drop.
+**Status: fixed upstream.** [llvm#238208](https://github.com/llvm/llvm-project/pull/238208) merged
+2026-11-04 (`e61a9cc5ffb6`) and closed [llvm#238205](https://github.com/llvm/llvm-project/issues/238205).
+The merged change is the two-line patch below. It is not in [AFAR 24.3.0](../../readme.md#afar-2430-2026-09-17),
+which predates it. Downstream [ROCm#5228](https://github.com/ROCm/llvm-project/issues/5228) is still open and
+asks for the fix in `amd-staging` and the next AFAR drop.
 
 ## Bug
 
