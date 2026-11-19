@@ -3,7 +3,7 @@
 Target: gfx90a (MI250X, MI210). Toolchain: AFAR 23.2.1 (`therock-afar-23.2.1-gfx90a-7.13.0`),
 which ships `lib/llvm/lib/clang/23/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a`.
 
-**Status: FIXED UPSTREAM, not in any AFAR drop.** Reported downstream as
+**Status: FIXED UPSTREAM and in AFAR 24.4.0** (see below; not in 24.3.0 or earlier). Reported downstream as
 [ROCm#3517](https://github.com/ROCm/llvm-project/issues/3517) (2026-07-22). Upstream fix
 [llvm#226307](https://github.com/llvm/llvm-project/pull/226307), approved by @jhuber6 and merged
 2026-09-29 as `6cd0f021ec73` (a second, empty commit `5274c3a05177` with the same title landed on
@@ -11,6 +11,15 @@ top from a retried merge request; it changes nothing). **AFAR 24.3.0 does not ca
 than 23.2.1**: the default `-O3` build no longer hides the problem, so MFC `simulation` fails to link
 out of the box. Patch for existing drops:
 [gist](https://gist.github.com/sbryngelson/6d60c1f8edd9d8da6091ae19ee85b18b).
+
+## AFAR 24.4.0 (checked 2026-11-19): fixed
+
+`therock-afar-24.4.0-multiarch-10.3.0-a71da8f` (ROCm/llvm-project `af5d6a979093`) carries llvm#226307.
+Its `lib/llvm/lib/clang/24/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a` defines
+`flang_rt_verbose_abort` and has no `DescriptorIoTicket`/`DerivedIoTicket` references (`llvm-nm`).
+MFC's nine Frontier (MI250X) test builds link without the weak stubs MFC carried, and its full GPU
+suite passes (944/944); the stubs are removed in
+[MFC#2303](https://github.com/MFlowCode/MFC/pull/2303). `repro.f90` has not been re-run on this drop.
 
 ## AFAR 24.3.0 (checked 2026-09-24 to 2026-09-29)
 

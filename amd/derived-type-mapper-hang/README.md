@@ -7,6 +7,13 @@ Upstream fix: [llvm/llvm-project#209645](https://github.com/llvm/llvm-project/pu
 2026-07-22 as `255d0013789d`. Not yet in any AFAR/ROCm drop — the `defaultmap(present:allocatable)`
 workaround below is still needed until a drop carries it.
 
+**AFAR 24.4.0 (checked 2026-11-19 in MFC):** without `defaultmap(present:allocatable)` on MFC's six
+AMR fine-IB ghost-point kernels, all 106 AMR tests (19 with IBM) and 114 IBM tests pass on Frontier
+MI250X, with per-test times matching the build that keeps the clause (28-52 s for the AMR IBM tests),
+so there is no busy loop. The workaround is removed in
+[MFC#2303](https://github.com/MFlowCode/MFC/pull/2303). The standalone reproducer here has not been
+re-run on this drop.
+
 **AFAR 24.3.0 (checked 2026-09-24):** the fix is in `therock-afar-24.3.0-multiarch-10.1.0-592954c` (ROCm/llvm-project `3ba19712e9fb`); the changelog lists it as `3f7502e95859` "Apply upstream performance PR #209645". Confirmed by commit ancestry only
 (`gh api repos/ROCm/llvm-project/compare/<fix>...3ba19712e9fb` returns `ahead`); the reproducer has
 not been run on this drop yet.
