@@ -19,7 +19,8 @@ Its `lib/llvm/lib/clang/24/lib/amdgcn-amd-amdhsa/libflang_rt.runtime.a` defines
 `flang_rt_verbose_abort` and has no `DescriptorIoTicket`/`DerivedIoTicket` references (`llvm-nm`).
 MFC's nine Frontier (MI250X) test builds link without the weak stubs MFC carried, and its full GPU
 suite passes (944/944); the stubs are removed in
-[MFC#2303](https://github.com/MFlowCode/MFC/pull/2303). `repro.f90` has not been re-run on this drop.
+[MFC#2303](https://github.com/MFlowCode/MFC/pull/2303). `repro.f90` links at -O0 through -O3 and at `--lto-O0`/`--lto-O1` with no undefined symbols and
+prints `4.`; the 24.3.0 control on the same machine fails with 7 `undefined symbol` errors.
 
 ## AFAR 24.3.0 (checked 2026-09-24 to 2026-09-29)
 

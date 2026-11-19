@@ -11,8 +11,8 @@ workaround below is still needed until a drop carries it.
 AMR fine-IB ghost-point kernels, all 106 AMR tests (19 with IBM) and 114 IBM tests pass on Frontier
 MI250X, with per-test times matching the build that keeps the clause (28-52 s for the AMR IBM tests),
 so there is no busy loop. The workaround is removed in
-[MFC#2303](https://github.com/MFlowCode/MFC/pull/2303). The standalone reproducer here has not been
-re-run on this drop.
+[MFC#2303](https://github.com/MFlowCode/MFC/pull/2303). The standalone reproducer also passes on this drop: without `defaultmap` it returns OK in 0.29 s
+(`hang exit=0 elapsed=.287418038s`), so ROCm#3385 can be closed.
 
 **AFAR 24.3.0 (checked 2026-09-24):** the fix is in `therock-afar-24.3.0-multiarch-10.1.0-592954c` (ROCm/llvm-project `3ba19712e9fb`); the changelog lists it as `3f7502e95859` "Apply upstream performance PR #209645". Confirmed by commit ancestry only
 (`gh api repos/ROCm/llvm-project/compare/<fix>...3ba19712e9fb` returns `ahead`); the reproducer has
